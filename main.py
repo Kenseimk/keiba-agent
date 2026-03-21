@@ -18,8 +18,8 @@ from pathlib import Path
 # ========== 設定 ==========
 DISCORD_WEBHOOK = os.environ.get('DISCORD_WEBHOOK', '')
 BUDGET          = int(os.environ.get('KEIBA_BUDGET', '10000'))
-DATA_DIR        = Path('/home/claude/keiba_agent/data')
-LOG_DIR         = Path('/home/claude/keiba_agent/logs')
+DATA_DIR        = Path('data')
+LOG_DIR         = Path('logs')
 
 # ========== 祝日チェック ==========
 def is_race_day(date: datetime.date = None) -> bool:

@@ -213,7 +213,7 @@ def run_fetch(date_str: str = None) -> dict:
     }
 
     # 保存
-    out_path = f"/home/claude/keiba_agent/data/races_{date_str}.json"
+    out_path = f"data/races_{date_str}.json"
     with open(out_path, 'w', encoding='utf-8') as f:
         json.dump(result, f, ensure_ascii=False, indent=2)
     print(f"[fetch] 保存: {out_path}")

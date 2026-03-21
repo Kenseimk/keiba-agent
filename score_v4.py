@@ -20,7 +20,7 @@ import numpy as np
 import pandas as pd
 
 # ===== ロードデータ =====
-def load_models(csv_dir='/home/claude/keiba_agent/data'):
+def load_models(csv_dir='data'):
     df = pd.read_csv(f'{csv_dir}/df_v4.csv')
     df['rank'] = pd.to_numeric(df['rank'], errors='coerce')
     df['win']  = (df['rank']==1).astype(int)

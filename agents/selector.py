@@ -4,7 +4,7 @@ score_v4.pyでスコア計算 → 条件判定 → 買い方提案
 """
 
 import sys, json, re, numpy as np
-sys.path.insert(0, '/home/claude/keiba_agent')
+sys.path.insert(0, '.')
 
 from score_v4 import (
     load_models, calc_total_score_v4, parse_passage,
@@ -141,7 +141,7 @@ def score_race(race: dict, js, dc_db, budget: int = 10000) -> dict | None:
 
 def run_selector(races_data: dict, budget: int = 10000) -> list[dict]:
     """全候補レースのスコア計算・選出を実行"""
-    js, dc_db = load_models('/home/claude/keiba_agent/data')
+    js, dc_db = load_models('data')
     candidates = races_data.get('candidates', [])
 
     selected = []
@@ -191,7 +191,7 @@ def format_selector_output(selected: list[dict]) -> str:
 if __name__ == '__main__':
     # テスト実行
     import glob
-    files = sorted(glob.glob('/home/claude/keiba_agent/data/races_*.json'))
+    files = sorted(glob.glob('data/races_*.json'))
     if files:
         with open(files[-1]) as f:
             data = json.load(f)
