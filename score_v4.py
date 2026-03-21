@@ -21,17 +21,15 @@ import pandas as pd
 
 # ===== ロードデータ =====
 def load_models(csv_dir='data'):
-    df = pd.read_csv(f'{csv_dir}/df_v4.csv')
-    df['rank'] = pd.to_numeric(df['rank'], errors='coerce')
-    df['win']  = (df['rank']==1).astype(int)
-    js = df.groupby('jockey').agg(rides=('win','count'), wins=('win','sum')).query('rides>=50')
-    js['j_score'] = (js['wins']/js['rides']/(js['wins']/js['rides']).max()*10).round(2)
+    """
+    jstats.csv（騎手スコア）と horse_course_stats.csv（同コース実績）を読み込む。
+    df_v4.csv（11MB）は不要 — 軽量版CSVで動作する。
+    """
+    # 騎手スコア
+    js = pd.read_csv(f'{csv_dir}/jstats.csv', index_col='jockey')
     
-    # 同コース・同距離実績DB
-    dc = df.groupby(['horse','dist_course']).agg(
-        dc_n=('win','count'), dc_wins=('win','sum')
-    ).reset_index()
-    dc['dc_wr'] = dc['dc_wins']/dc['dc_n']
+    # 同コース・同距離実績
+    dc = pd.read_csv(f'{csv_dir}/horse_course_stats.csv')
     
     return js, dc
 
