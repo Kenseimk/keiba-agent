@@ -13,6 +13,8 @@ GitHub Actions / cron での自動実行:
 """
 
 import sys, json, datetime, os
+from datetime import timezone, timedelta
+JST = timezone(timedelta(hours=9))
 from pathlib import Path
 
 # ========== 設定 ==========
@@ -24,7 +26,7 @@ LOG_DIR         = Path('logs')
 # ========== 祝日チェック ==========
 def is_race_day(date: datetime.date = None) -> bool:
     """土日祝日かどうかを判定"""
-    d = date or datetime.date.today()
+    d = date or datetime.datetime.now(JST).date()
     if d.weekday() >= 5:  # 土日
         return True
     try:
@@ -42,7 +44,7 @@ def run_morning(date_str: str = None):
     from agents.verifier import run_verifier, format_verifier_output
     from discord_notify import notify_morning, notify_error
 
-    date_str = date_str or datetime.date.today().strftime('%Y%m%d')
+    date_str = date_str or datetime.datetime.now(JST).strftime('%Y%m%d')
     log(f"=== 朝の予想開始 {date_str} ===")
 
     # 1. レースデータ取得
@@ -114,7 +116,7 @@ def run_evening(date_str: str = None):
     from agents.learner import run_learner, format_learner_output
     from discord_notify import notify_evening, notify_error
 
-    date_str = date_str or datetime.date.today().strftime('%Y%m%d')
+    date_str = date_str or datetime.datetime.now(JST).strftime('%Y%m%d')
     log(f"=== 夜間学習開始 {date_str} ===")
 
     try:
