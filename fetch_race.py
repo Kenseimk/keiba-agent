@@ -28,16 +28,23 @@ def fetch_race_list(page, date_str: str) -> list[dict]:
         const links = Array.from(document.querySelectorAll('a[href*="race_id="]'));
         const results = {};
         links.forEach(a => {
-            const m = a.href.match(/race_id=(\\d{12})/);
+            const m = a.href.match(/race_id=(\d{12})/);
             if (!m) return;
             const rid = m[1];
             const rnum = parseInt(rid.slice(10, 12));
             if (rnum < 8 || rnum > 11) return;
-            const txt = a.closest('li,div,td')?.textContent || a.textContent;
+            const container = a.closest('li,div,td,dl') || a.parentElement;
+            const txt = (container?.textContent || a.textContent).replace(/\s+/g,' ').trim();
+            const distM = txt.match(/(\d{3,4})m/);
+            const horsesM = txt.match(/(\d{1,2})頭/);
+            const isDirt = txt.includes('ダート') || /ダ\d/.test(txt);
             if (!results[rid]) results[rid] = {
                 race_id: rid,
                 rnum: rnum,
-                text: txt.replace(/\\s+/g,' ').trim().slice(0,100)
+                text: txt.slice(0,120),
+                dist_hint: distM ? parseInt(distM[1]) : 0,
+                n_hint: horsesM ? parseInt(horsesM[1]) : 0,
+                course_hint: isDirt ? 'ダート' : (txt.includes('芝') ? '芝' : 'ダート'),
             };
         });
         return Object.values(results);
@@ -67,11 +74,19 @@ def fetch_odds_and_shutuba(page, race_id: str) -> dict:
         return Object.values(horses);
     }""")
 
-    # レース情報（距離・頭数・コース・クラス）
+    # レース情報（距離・頭数・コース・クラス）- 複数セレクタで確実に取得
     race_meta = page.evaluate("""() => {
-        const meta = document.querySelector('.RaceData01, .RaceData')?.textContent || '';
-        const title = document.querySelector('h2.RaceName, .RaceName')?.textContent?.trim() || '';
-        return {meta, title};
+        const metaEl = document.querySelector('.RaceData01') ||
+                       document.querySelector('.RaceData') ||
+                       document.querySelector('[class*="RaceData"]');
+        const meta = metaEl?.textContent || '';
+        const titleEl = document.querySelector('h2.RaceName') ||
+                        document.querySelector('.RaceName') ||
+                        document.querySelector('[class*="RaceName"]');
+        const title = titleEl?.textContent?.trim() || '';
+        // ページ全体テキストをフォールバック用に取得
+        const bodyText = document.body.innerText.slice(0, 1000);
+        return {meta, title, bodyText};
     }""")
 
     # オッズ取得
@@ -87,10 +102,12 @@ def fetch_odds_and_shutuba(page, race_id: str) -> dict:
             const link = r.querySelector('a[href*="/horse/"]');
             if (link && /^\\d+$/.test(tds[0])) {
                 const m = link.href.match(/\\/horse\\/(\\d{10})/);
+                // 単勝オッズ（XX.X形式）を探す
+                const oddsCell = tds.find(t => /^\\d+\\.\\d$/.test(t));
                 data.push({
                     pop: parseInt(tds[0]),
                     name: link.textContent.trim(),
-                    odds: parseFloat(tds[tds.length-1]),
+                    odds: oddsCell ? parseFloat(oddsCell) : parseFloat(tds[tds.length-1]),
                     horse_id: m ? m[1] : null
                 });
             }
@@ -98,14 +115,25 @@ def fetch_odds_and_shutuba(page, race_id: str) -> dict:
         return data.filter(d => d.pop && d.odds);
     }""")
 
-    # 距離・頭数を parse
-    meta_text = race_meta.get('meta','') + race_meta.get('title','')
-    dist_m = re.search(r'(\d{3,4})m', meta_text)
-    horses_m = re.search(r'(\d+)頭', meta_text)
-    course_m = '芝' if '芝' in meta_text and 'ダート' not in meta_text else 'ダート'
+    # 距離・頭数を parse（meta→bodyTextの順でフォールバック）
+    meta_text = (race_meta.get('meta','') + ' ' +
+                 race_meta.get('title','') + ' ' +
+                 race_meta.get('bodyText',''))
+    dist_m = re.search(r'(\d{4})m', meta_text) or re.search(r'(\d{3})m', meta_text)
+    horses_m = re.search(r'(\d{1,2})頭', meta_text)
+    # コース判定（ダートを先に）
+    if 'ダート' in meta_text:
+        course_m = 'ダート'
+    elif '芝' in meta_text:
+        course_m = '芝'
+    else:
+        course_m = 'ダート'
     dist = int(dist_m.group(1)) if dist_m else 0
     n_horses = int(horses_m.group(1)) if horses_m else len(odds_data)
     race_name = race_meta.get('title','').strip()
+    # race_nameが空の場合はURLのrace_idから推定
+    if not race_name:
+        race_name = f"{race_id[-2:]}R"
 
     return {
         'race_id': race_id,
@@ -158,12 +186,24 @@ def filter_candidate_races(races_info: list[dict]) -> list[dict]:
     """条件C候補（頭数14以下・1800m以上）だけ返す"""
     candidates = []
     for r in races_info:
-        if r['dist'] >= MIN_DIST and r['n_horses'] <= MAX_HORSES:
+        # dist=0はパース失敗 → dist_hintで補完
+        dist = r.get('dist') or r.get('dist_hint', 0)
+        n    = r.get('n_horses') or r.get('n_hint', 99)
+        if dist == 0 or n == 0:
+            print(f"[filter] スキップ（dist/頭数不明）: {r.get('race_id')} dist={dist} n={n}")
+            continue
+        if dist >= MIN_DIST and n <= MAX_HORSES:
             # 障害・新馬・未勝利除外
-            name = r.get('race_name','')
+            name = r.get('race_name','') + r.get('text','')
             if any(kw in name for kw in ['障害','ハードル','スティープル','新馬','未勝利']):
                 continue
+            # dist/n_horsesを確実にセット
+            r['dist']     = dist
+            r['n_horses'] = n
             candidates.append(r)
+            print(f"[filter] 候補: {r.get('race_name','?')} {dist}m {n}頭")
+        else:
+            print(f"[filter] 除外: {r.get('race_name','?')} {dist}m {n}頭")
     return candidates
 
 def run_fetch(date_str: str = None) -> dict:
