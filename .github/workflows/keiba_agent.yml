@@ -1,0 +1,99 @@
+name: keiba-agent
+
+on:
+  schedule:
+    # 毎週土曜 09:30 JST (00:30 UTC)
+    - cron: '30 0 * * 6'
+    # 毎週日曜 09:30 JST (00:30 UTC)
+    - cron: '30 0 * * 0'
+    # 毎週土曜 21:00 JST (12:00 UTC)
+    - cron: '0 12 * * 6'
+    # 毎週日曜 21:00 JST (12:00 UTC)
+    - cron: '0 12 * * 0'
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'morning or evening'
+        required: true
+        default: 'morning'
+        type: choice
+        options: [morning, evening, test_discord]
+      date:
+        description: '日付 (YYYYMMDD, 省略で今日)'
+        required: false
+
+jobs:
+  run-agent:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          playwright install chromium --with-deps
+
+      - name: データファイルをダウンロード
+        run: |
+          # df_v4.csv / jstats.csv は Secrets に base64 で保存しておく
+          echo "${{ secrets.DF_V4_CSV_B64 }}" | base64 -d > keiba_agent/data/df_v4.csv
+          echo "${{ secrets.JSTATS_CSV_B64 }}" | base64 -d > keiba_agent/data/jstats.csv
+
+      - name: 朝の予想実行
+        if: |
+          (github.event_name == 'schedule' && 
+           (startsWith(github.event.schedule, '30 0'))) ||
+          (github.event_name == 'workflow_dispatch' && 
+           github.event.inputs.mode == 'morning')
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          KEIBA_BUDGET: '10000'
+        run: |
+          DATE="${{ github.event.inputs.date }}"
+          if [ -z "$DATE" ]; then
+            python keiba_agent/main.py morning
+          else
+            python keiba_agent/main.py morning $DATE
+          fi
+
+      - name: 夜間学習実行
+        if: |
+          (github.event_name == 'schedule' && 
+           (startsWith(github.event.schedule, '0 12'))) ||
+          (github.event_name == 'workflow_dispatch' && 
+           github.event.inputs.mode == 'evening')
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          DATE="${{ github.event.inputs.date }}"
+          if [ -z "$DATE" ]; then
+            python keiba_agent/main.py evening
+          else
+            python keiba_agent/main.py evening $DATE
+          fi
+
+      - name: Discord接続テスト
+        if: |
+          github.event_name == 'workflow_dispatch' && 
+          github.event.inputs.mode == 'test_discord'
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+        run: python keiba_agent/main.py test_discord
+
+      - name: ログをアーティファクトとして保存
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: agent-logs-${{ github.run_id }}
+          path: keiba_agent/logs/
+          retention-days: 30
