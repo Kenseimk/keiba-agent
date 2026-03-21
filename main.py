@@ -137,6 +137,40 @@ def run_evening(date_str: str = None):
 
     log("=== 夜間学習完了 ===")
 
+
+# ========== 発走30分前チェック ==========
+def run_prerace(date_str: str = None):
+    """発走30分前チェックパイプライン"""
+    from agents.prerace_check import run_prerace_check, format_prerace_message
+    from discord_notify import send_webhook, notify_error
+
+    date_str = date_str or datetime.datetime.now(JST).strftime('%Y%m%d')
+    log(f"=== 発走前チェック開始 {date_str} ===")
+
+    try:
+        results = run_prerace_check(date_str)
+    except Exception as e:
+        msg = f"prerace_check エラー: {e}"
+        log(msg, level='ERROR')
+        if DISCORD_WEBHOOK:
+            notify_error(DISCORD_WEBHOOK, msg)
+        return
+
+    if not results:
+        log("発走30分前のレースなし")
+        return
+
+    for result in results:
+        msg = format_prerace_message(result)
+        if DISCORD_WEBHOOK:
+            from discord_notify import send_webhook
+            ok = send_webhook(DISCORD_WEBHOOK, content=msg)
+            log(f"発走前通知送信: {'成功' if ok else '失敗'} - {result['pred']['race_name']}")
+        else:
+            print(msg)
+
+    log("=== 発走前チェック完了 ===")
+
 # ========== ユーティリティ ==========
 def log(msg: str, level: str = 'INFO'):
     ts = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
@@ -170,6 +204,12 @@ if __name__ == '__main__':
         else:
             ok = test_webhook(DISCORD_WEBHOOK)
             print("接続テスト:", "成功" if ok else "失敗")
+
+    elif cmd == 'prerace':
+        if date_arg or is_race_day():
+            run_prerace(date_arg)
+        else:
+            log("本日はレース開催日ではありません")
 
     elif cmd == 'check_today':
         today = datetime.date.today()

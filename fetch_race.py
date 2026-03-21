@@ -135,14 +135,21 @@ def fetch_odds_and_shutuba(page, race_id: str) -> dict:
     if not race_name:
         race_name = f"{race_id[-2:]}R"
 
+    # 発走時刻をrace一覧のtextから取得
+    start_time = ''
+    time_m = re.search(r'(\d{1,2}:\d{2})', race_meta.get('bodyText','') + race_meta.get('meta','') + race_meta.get('title',''))
+    if time_m:
+        start_time = time_m.group(1)
+
     return {
-        'race_id': race_id,
-        'race_name': race_name,
-        'dist': dist,
-        'n_horses': n_horses,
-        'course': course_m,
-        'horses': horses,    # horse_id -> {name, jockey}
-        'odds': odds_data,   # [{pop, name, odds, horse_id}]
+        'race_id':    race_id,
+        'race_name':  race_name,
+        'dist':       dist,
+        'n_horses':   n_horses,
+        'course':     course_m,
+        'horses':     horses,
+        'odds':       odds_data,
+        'start_time': start_time,
     }
 
 def fetch_horse_histories(page, horse_ids: list[str]) -> dict:

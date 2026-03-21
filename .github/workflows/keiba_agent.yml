@@ -2,10 +2,16 @@ name: keiba-agent
 
 on:
   schedule:
-    - cron: '30 0 * * 6'   # 毎週土曜 09:30 JST
-    - cron: '30 0 * * 0'   # 毎週日曜 09:30 JST
-    - cron: '0 12 * * 6'   # 毎週土曜 21:00 JST
-    - cron: '0 12 * * 0'   # 毎週日曜 21:00 JST
+    - cron: '30 0 * * 6'   # 毎週土曜 09:30 JST（朝の予想）
+    - cron: '30 0 * * 0'   # 毎週日曜 09:30 JST（朝の予想）
+    - cron: '0 12 * * 6'   # 毎週土曜 21:00 JST（夜間学習）
+    - cron: '0 12 * * 0'   # 毎週日曜 21:00 JST（夜間学習）
+    - cron: '0 4 * * 6,0'  # 毎週土日 13:00 JST（13:30発走の30分前）
+    - cron: '30 4 * * 6,0' # 毎週土日 13:30 JST（14:00発走の30分前）
+    - cron: '0 5 * * 6,0'  # 毎週土日 14:00 JST（14:30発走の30分前）
+    - cron: '30 5 * * 6,0' # 毎週土日 14:30 JST（15:00発走の30分前）
+    - cron: '0 6 * * 6,0'  # 毎週土日 15:00 JST（15:30発走の30分前）
+    - cron: '15 6 * * 6,0' # 毎週土日 15:15 JST（15:45発走の30分前）
   workflow_dispatch:
     inputs:
       mode:
@@ -13,7 +19,7 @@ on:
         required: true
         default: 'morning'
         type: choice
-        options: [morning, evening, test_discord]
+        options: [morning, evening, prerace, test_discord]
       date:
         description: '日付 (YYYYMMDD, 省略で今日)'
         required: false
@@ -62,6 +68,22 @@ jobs:
           DATE="${{ github.event.inputs.date }}"
           if [ -z "$DATE" ]; then python main.py evening
           else python main.py evening $DATE
+          fi
+
+      - name: 発走30分前チェック
+        if: |
+          (github.event_name == 'schedule' && 
+           (startsWith(github.event.schedule, '0 4') || startsWith(github.event.schedule, '30 4') ||
+            startsWith(github.event.schedule, '0 5') || startsWith(github.event.schedule, '30 5') ||
+            startsWith(github.event.schedule, '0 6') || startsWith(github.event.schedule, '15 6'))) ||
+          (github.event_name == 'workflow_dispatch' && github.event.inputs.mode == 'prerace')
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          DATE="${{ github.event.inputs.date }}"
+          if [ -z "$DATE" ]; then python main.py prerace
+          else python main.py prerace $DATE
           fi
 
       - name: Discord接続テスト

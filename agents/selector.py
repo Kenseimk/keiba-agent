@@ -127,16 +127,17 @@ def score_race(race: dict, js, dc_db, budget: int = 10000) -> dict | None:
     bet = recommend_bet(results, cond, budget)
 
     return {
-        'race_id':   race['race_id'],
-        'race_name': race['race_name'],
-        'course':    course,
-        'dist':      dist,
-        'n_horses':  n,
-        'condition': cond,
-        'gap':       gap,
-        'scores':    results,
-        'best':      best,
-        'bet':       bet,
+        'race_id':    race['race_id'],
+        'race_name':  race['race_name'],
+        'course':     course,
+        'dist':       dist,
+        'n_horses':   n,
+        'condition':  cond,
+        'gap':        gap,
+        'scores':     results,
+        'best':       best,
+        'bet':        bet,
+        'start_time': race.get('start_time', ''),
     }
 
 def run_selector(races_data: dict, budget: int = 10000) -> list[dict]:
