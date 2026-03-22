@@ -12,6 +12,7 @@ on:
     - cron: '30 5 * * 6,0' # 毎週土日 14:30 JST（15:00発走の30分前）
     - cron: '0 6 * * 6,0'  # 毎週土日 15:00 JST（15:30発走の30分前）
     - cron: '15 6 * * 6,0' # 毎週土日 15:15 JST（15:45発走の30分前）
+    - cron: '0 0 1 * *'    # 毎月1日 09:00 JST（月初補充）
   workflow_dispatch:
     inputs:
       mode:
@@ -19,7 +20,7 @@ on:
         required: true
         default: 'morning'
         type: choice
-        options: [morning, evening, prerace, test_discord]
+        options: [morning, evening, prerace, cashier_end, cashier_start, refactor, apply_params, test_discord]
       date:
         description: '日付 (YYYYMMDD, 省略で今日)'
         required: false
@@ -65,6 +66,7 @@ jobs:
         env:
           DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          NOTION_API_KEY: ${{ secrets.NOTION_API_KEY }}
         run: |
           DATE="${{ github.event.inputs.date }}"
           if [ -z "$DATE" ]; then python main.py evening
@@ -87,6 +89,50 @@ jobs:
           if [ -z "$DATE" ]; then python main.py prerace
           else python main.py prerace $DATE
           fi
+
+      - name: 月末軍資金精算（cashier_end）
+        if: |
+          (github.event_name == 'workflow_dispatch' && github.event.inputs.mode == 'cashier_end')
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+          NOTION_API_KEY: ${{ secrets.NOTION_API_KEY }}
+        run: |
+          DATE="${{ github.event.inputs.date }}"
+          if [ -z "$DATE" ]; then python main.py cashier_end
+          else python main.py cashier_end $DATE
+          fi
+
+      - name: 月初軍資金補充（cashier_start）
+        if: |
+          (github.event_name == 'schedule' && startsWith(github.event.schedule, '0 0 1')) ||
+          (github.event_name == 'workflow_dispatch' && github.event.inputs.mode == 'cashier_start')
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+          NOTION_API_KEY: ${{ secrets.NOTION_API_KEY }}
+        run: |
+          DATE="${{ github.event.inputs.date }}"
+          if [ -z "$DATE" ]; then python main.py cashier_start
+          else python main.py cashier_start $DATE
+          fi
+
+      - name: パラメータ改修ループ（refactor）
+        if: github.event_name == 'workflow_dispatch' && github.event.inputs.mode == 'refactor'
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          NOTION_API_KEY: ${{ secrets.NOTION_API_KEY }}
+        run: |
+          DATE="${{ github.event.inputs.date }}"
+          if [ -z "$DATE" ]; then python main.py refactor
+          else python main.py refactor $DATE
+          fi
+
+      - name: パラメータ適用（apply_params）
+        if: github.event_name == 'workflow_dispatch' && github.event.inputs.mode == 'apply_params'
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+          NOTION_API_KEY: ${{ secrets.NOTION_API_KEY }}
+        run: python main.py apply_params
 
       - name: Discord接続テスト
         if: github.event_name == 'workflow_dispatch' && github.event.inputs.mode == 'test_discord'

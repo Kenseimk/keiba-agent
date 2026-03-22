@@ -7,7 +7,7 @@ import json, re, datetime, anthropic
 from pathlib import Path
 from playwright.sync_api import sync_playwright
 
-DATA_DIR = Path('/home/claude/keiba_agent/data')
+DATA_DIR = Path('data')
 LOG_FILE  = DATA_DIR / 'learning_log.jsonl'
 
 LEARNER_SYSTEM = """あなたは競馬予想モデルの改善エージェントです。
@@ -181,6 +181,31 @@ def run_learner(date_str: str = None) -> dict:
     with open(result_file, 'w', encoding='utf-8') as f:
         json.dump(log_entry, f, ensure_ascii=False, indent=2)
 
+    # ===== Notion自動記録 =====
+    try:
+        # レース結果をHorseRacingDBに記録
+        for pred in predictions:
+            pred['date'] = date_str
+        save_races_to_notion(comparisons, predictions)
+
+        # 月末なら月全体の損益をNotionから集計して軍資金に記録
+        if check_monthly_end(date_str):
+            year  = int(date_str[:4])
+            month = int(date_str[4:6])
+            monthly_profit = calc_monthly_profit_from_notion(year, month)
+            if monthly_profit > 0:
+                add_amount = int(monthly_profit * 0.70)
+                save_cash_to_notion(
+                    f"{year}年{month}月 利益70%追加",
+                    add_amount,
+                    f"{date_str[:4]}-{date_str[4:6]}-{date_str[6:8]}"
+                )
+                print(f"[learner] 月末利益追加: {add_amount}円（{year}/{month}月 利益{monthly_profit}円の70%）")
+            else:
+                print(f"[learner] 月末: {year}/{month}月は損益{monthly_profit}円のため軍資金追加なし")
+    except Exception as e:
+        print(f"[learner] Notion記録エラー（続行）: {e}")
+
     print(f"[learner] 学習完了: {analysis.get('summary','')}")
     return log_entry
 
@@ -233,3 +258,175 @@ if __name__ == '__main__':
     date_arg = sys.argv[1] if len(sys.argv) > 1 else None
     log = run_learner(date_arg)
     print(format_learner_output(log))
+
+
+# ===== Notion自動記録 =====
+
+NOTION_HORSE_RACING_DS = "2df1333d-21b1-8089-8c51-000bd8a8c87d"  # HorseRacingDB
+NOTION_CASH_DS         = "2eb1333d-21b1-8038-9c5e-000b44ea9f23"  # HorseRacing-Cash
+
+def save_races_to_notion(comparisons: list[dict], predictions: list[dict]) -> bool:
+    """レース結果をNotionのHorseRacingDBに自動記録"""
+    import requests, os
+    key = os.environ.get('NOTION_API_KEY', '')
+    if not key:
+        print("[notion] NOTION_API_KEY未設定")
+        return False
+
+    headers = {
+        "Authorization": f"Bearer {key}",
+        "Content-Type": "application/json",
+        "Notion-Version": "2022-06-28",
+    }
+
+    saved = 0
+    for pred in predictions:
+        comp = next((c for c in comparisons if c['race_id'] == pred['race_id']), None)
+        race_name = pred.get('race_name', pred['race_id'])
+        date_str  = pred.get('date', datetime.datetime.now().strftime('%Y-%m-%d'))
+        # YYYY-MM-DD形式に変換
+        if len(date_str) == 8:
+            date_str = f"{date_str[:4]}-{date_str[4:6]}-{date_str[6:8]}"
+
+        # bet情報から各馬券を取得
+        bet = pred.get('bet', {})
+        bets = bet.get('bets', [])
+
+        for b in bets:
+            horse = b.get('horse', '') or '-'.join(b.get('horses', []))
+            bet_type = b.get('type', '')
+            amount = b.get('amount', 0)
+
+            # 払戻金を判定（結果から）
+            payout = 0
+            if comp:
+                actual_1st = comp.get('actual_1st', '')
+                tansho_hit = comp.get('tansho_hit', False)
+                tansho_payout = comp.get('tansho_payout') or 0
+
+                if '単勝' in bet_type and tansho_hit:
+                    payout = int(amount * (tansho_payout / 100))
+                elif '三連複' in bet_type:
+                    # 三連複の払戻は別途取得が必要なため0とする（手動修正）
+                    payout = 0
+
+            name = f"{race_name} {bet_type} {horse}"
+            payload = {
+                "parent": {"database_id": NOTION_HORSE_RACING_DS},
+                "properties": {
+                    "名前": {"title": [{"text": {"content": name}}]},
+                    "掛け金": {"number": amount},
+                    "払戻金": {"number": payout},
+                    "日付": {"date": {"start": date_str}},
+                }
+            }
+            try:
+                resp = requests.post(
+                    "https://api.notion.com/v1/pages",
+                    headers=headers, json=payload, timeout=15
+                )
+                resp.raise_for_status()
+                saved += 1
+                print(f"[notion] レース記録: {name} 掛け{amount}円 払戻{payout}円")
+            except Exception as e:
+                print(f"[notion] レース記録エラー: {e}")
+
+    print(f"[notion] {saved}件記録完了")
+    return saved > 0
+
+
+def save_cash_to_notion(label: str, amount: int, date_str: str = None) -> bool:
+    """軍資金DBに記録（月次補充・利益追加）"""
+    import requests, os
+    key = os.environ.get('NOTION_API_KEY', '')
+    if not key: return False
+
+    if not date_str:
+        date_str = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=9))).strftime('%Y-%m-%d')
+
+    headers = {
+        "Authorization": f"Bearer {key}",
+        "Content-Type": "application/json",
+        "Notion-Version": "2022-06-28",
+    }
+    payload = {
+        "parent": {"database_id": NOTION_CASH_DS},
+        "properties": {
+            "名前": {"title": [{"text": {"content": label}}]},
+            "記録": {"number": amount},
+            "日付": {"date": {"start": date_str}},
+        }
+    }
+    try:
+        resp = requests.post(
+            "https://api.notion.com/v1/pages",
+            headers=headers, json=payload, timeout=15
+        )
+        resp.raise_for_status()
+        print(f"[notion] 軍資金記録: {label} {amount}円")
+        return True
+    except Exception as e:
+        print(f"[notion] 軍資金記録エラー: {e}")
+        return False
+
+
+def check_monthly_end(date_str: str) -> bool:
+    """月末かどうか判定"""
+    import calendar
+    d = datetime.date(int(date_str[:4]), int(date_str[4:6]), int(date_str[6:8]))
+    last_day = calendar.monthrange(d.year, d.month)[1]
+    return d.day == last_day
+
+def calc_monthly_profit_from_notion(year: int, month: int) -> int:
+    """NotionのHorseRacingDBからその月の合計損益を計算"""
+    import requests, os
+    key = os.environ.get('NOTION_API_KEY', '')
+    if not key:
+        return 0
+
+    headers = {
+        "Authorization": f"Bearer {key}",
+        "Content-Type": "application/json",
+        "Notion-Version": "2022-06-28",
+    }
+
+    start = f"{year:04d}-{month:02d}-01"
+    import calendar
+    last_day = calendar.monthrange(year, month)[1]
+    end = f"{year:04d}-{month:02d}-{last_day:02d}"
+
+    # HorseRacingDBから当月分を取得
+    payload = {
+        "filter": {
+            "and": [
+                {"property": "日付", "date": {"on_or_after": start}},
+                {"property": "日付", "date": {"on_or_before": end}},
+            ]
+        },
+        "page_size": 100
+    }
+
+    HORSE_RACING_DB = "2df1333d21b1808293adc2fe02155ce9"
+    try:
+        resp = requests.post(
+            f"https://api.notion.com/v1/databases/{HORSE_RACING_DB}/query",
+            headers=headers, json=payload, timeout=15
+        )
+        resp.raise_for_status()
+        pages = resp.json().get('results', [])
+
+        total_invest = 0
+        total_payout = 0
+        for p in pages:
+            props = p.get('properties', {})
+            invest = props.get('掛け金', {}).get('number') or 0
+            payout = props.get('払戻金', {}).get('number') or 0
+            total_invest += invest
+            total_payout += payout
+
+        profit = total_payout - total_invest
+        print(f"[notion] {year}/{month}月 集計: 投資{total_invest}円 回収{total_payout}円 損益{profit}円")
+        return profit
+    except Exception as e:
+        print(f"[notion] 月次集計エラー: {e}")
+        return 0
