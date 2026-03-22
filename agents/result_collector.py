@@ -59,9 +59,8 @@ def _save_to_notion(rows: list[dict], date_fmt: str) -> int:
             "parent": {"database_id": RACE_RESULT_DB},
             "properties": {
                 "レース名": {"title": [{"text": {"content": title}}]},
-                "date:日付:start": date_fmt,
-                "date:日付:is_datetime": 0,
-                "race_id":    {"rich_text": [{"text": {"content": row.get('race_id', '')}}]},
+                "日付":    {"date": {"start": date_fmt}},
+                "race_id": {"rich_text": [{"text": {"content": row.get('race_id', '')}}]},
                 "開催場":      {"select": {"name": row['venue']}} if row.get('venue') and row['venue'] in ['札幌','函館','福島','新潟','東京','中山','中京','京都','阪神','小倉'] else None,
                 "コース":      {"select": {"name": row['course']}} if row.get('course') and row['course'] in ['芝','ダート','障害'] else None,
                 "距離":       {"number": int(row['dist'])} if row.get('dist') else None,
