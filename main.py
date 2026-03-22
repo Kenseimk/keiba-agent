@@ -113,18 +113,25 @@ def run_evening(date_str: str = None):
     log(f"=== evening開始 {date_str} ===")
 
     try:
-        # 1. learner: 学習・分析
+        # 1. result_collector: 全レース結果をNotionに保存
+        from agents.result_collector import run_result_collector
+        predictions_for_ids = load_predictions(date_str)
+        target_ids = [p['race_id'] for p in (predictions_for_ids or [])]
+        rc_result  = run_result_collector(date_str, target_ids)
+        log(f"全レース結果保存: {rc_result.get('saved',0)}件 / {rc_result.get('races',0)}レース")
+
+        # 2. learner: 学習・分析
         log_entry    = run_learner(date_str)
         learner_text = format_learner_output(log_entry)
         comparisons  = log_entry.get('comparisons', [])
 
-        # 2. tracker: DB記録
+        # 3. tracker: DB記録
         predictions = load_predictions(date_str)
         recorded    = {}
         if predictions:
             recorded = run_record(date_str, predictions, comparisons)
 
-        # 3. reporter: Discord通知
+        # 4. reporter: Discord通知
         report_evening(date_str, learner_text, recorded)
         log("=== evening完了 ===")
 
