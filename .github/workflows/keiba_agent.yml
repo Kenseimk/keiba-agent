@@ -50,6 +50,7 @@ jobs:
         env:
           DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          NOTION_API_KEY: ${{ secrets.NOTION_API_KEY }}
           KEIBA_BUDGET: '10000'
         run: |
           DATE="${{ github.event.inputs.date }}"
@@ -80,6 +81,7 @@ jobs:
         env:
           DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          NOTION_API_KEY: ${{ secrets.NOTION_API_KEY }}
         run: |
           DATE="${{ github.event.inputs.date }}"
           if [ -z "$DATE" ]; then python main.py prerace
