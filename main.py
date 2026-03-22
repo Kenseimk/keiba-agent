@@ -90,11 +90,18 @@ def run_morning(date_str: str = None):
             log(f"verifier エラー: {e}", level='WARN')
             verifier_text = f"反証エージェントエラー: {e}"
 
-    # 4. 予測結果を保存
+    # 4. 予測結果を保存（ローカル + Notion）
     pred_file = DATA_DIR / f'selected_{date_str}.json'
     with open(pred_file, 'w', encoding='utf-8') as f:
         json.dump(selected, f, ensure_ascii=False, indent=2, default=str)
     log(f"予測保存: {pred_file}")
+
+    # Notionにも保存（prerace用）
+    try:
+        from notion_store import save_predictions
+        save_predictions(date_str, selected)
+    except Exception as e:
+        log(f"Notion保存エラー（続行）: {e}", level='WARN')
 
     # 5. Discord通知
     if DISCORD_WEBHOOK:
