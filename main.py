@@ -208,10 +208,8 @@ def run_apply_params(date_str: str = None):
     with open(files[-1]) as f:
         params = json.load(f)
     apply_params(params)
-    _send(f"✅ パラメータを適用しました
-```json
-{json.dumps(params, ensure_ascii=False, indent=2)}
-```")
+    params_json = json.dumps(params, ensure_ascii=False, indent=2)
+    _send(f"✅ パラメータを適用しました\n```json\n{params_json}\n```")
     log(f"パラメータ適用完了: {params}")
 
 
