@@ -158,7 +158,7 @@ jobs:
               print(f'\n===== {year}年{int(month)}月 開始 =====')
               try:
                   result = subprocess.run(
-                      ['python', 'scripts/fetch_history.py',
+                      ['python', 'fetch_history.py',
                        '--year', year, '--month', str(int(month))],
                       env={**os.environ, 'PYTHONPATH': '.'},
                       timeout=1800,  # 30分でタイムアウト
