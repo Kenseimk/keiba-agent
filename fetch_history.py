@@ -1,17 +1,14 @@
 """
-fetch_history.py - netkeiba スクレイパー（race_id直接取得版）
+fetch_history.py - netkeiba スクレイパー（db.netkeiba.com版）
 
-netkeibaの race_list.html ページの DOM から
-myhorse_{race_id} 要素を取得してrace_idを収集する。
-CSVファイル不要。
+db.netkeiba.com/race/list/YYYYMMDD/ から race_id を取得する。
+CSVファイル不要。過去データも正確に取得可能。
 """
 
 import os, re, json, time, random, argparse, requests
 from bs4 import BeautifulSoup
+import calendar
 
-# ============================================================
-# 定数
-# ============================================================
 VENUE_CODE = {
     '札幌':'01','函館':'02','福島':'03','新潟':'04',
     '東京':'05','中山':'06','中京':'07','京都':'08',
@@ -56,9 +53,9 @@ def _get_session():
         s = requests.Session()
         s.headers.update(BASE_HEADERS)
         try:
-            s.get('https://www.netkeiba.com/', timeout=10)
+            s.get('https://db.netkeiba.com/', timeout=10)
             time.sleep(random.uniform(1.5, 3.0))
-            s.headers.update({'Referer': 'https://race.netkeiba.com/top/'})
+            s.headers.update({'Referer': 'https://db.netkeiba.com/'})
         except Exception as e:
             print(f'[session] トップページ取得失敗（続行）: {e}')
         _session = s
@@ -71,10 +68,54 @@ def _sleep(long=False):
     time.sleep(max(1.0, t + random.uniform(-0.3, 0.3)))
 
 # ============================================================
-# ステップ1: カレンダーから開催日リストを取得
+# db.netkeiba.com からrace_idを取得
 # ============================================================
+def get_race_ids_for_date(date_str: str) -> list:
+    """
+    db.netkeiba.com/race/list/YYYYMMDD/ から
+    JRAのrace_idリストを取得する。
+
+    Args:
+        date_str: 'YYYYMMDD' 形式
+    """
+    url     = f'https://db.netkeiba.com/race/list/{date_str}/'
+    session = _get_session()
+    race_ids = []
+
+    try:
+        resp = session.get(url, timeout=15)
+        if resp.status_code == 404:
+            return []
+        resp.raise_for_status()
+        resp.encoding = 'EUC-JP'
+        soup = BeautifulSoup(resp.text, 'html.parser')
+        session.headers.update({'Referer': url})
+        _sleep()
+
+        # /race/XXXXXXXXXXXX/ 形式のリンクからrace_idを抽出
+        for a in soup.select('a[href*="/race/"]'):
+            href = a.get('href', '')
+            m = re.search(r'/race/(\d{12})/?', href)
+            if m:
+                race_id   = m.group(1)
+                venue_code = race_id[4:6]
+                # JRAの場コードのみ
+                if venue_code in JRA_VENUE_CODES:
+                    race_ids.append(race_id)
+
+        race_ids = sorted(set(race_ids))
+        print(f'  [{date_str}] {len(race_ids)}レース取得')
+
+    except Exception as e:
+        print(f'  [{date_str}] 取得失敗: {e}')
+
+    return race_ids
+
+
 def get_kaisai_dates(year: int, month: int) -> list:
-    """カレンダーページから開催日付リスト（YYYYMMDD）を取得"""
+    """
+    race.netkeiba.com カレンダーから開催日リストを取得
+    """
     url     = f'https://race.netkeiba.com/top/calendar.html?year={year}&month={month}'
     session = _get_session()
     dates   = []
@@ -93,47 +134,20 @@ def get_kaisai_dates(year: int, month: int) -> list:
 
         dates = sorted(set(dates))
         print(f'[calendar] {year}年{month}月: {len(dates)}開催日 → {dates}')
+
     except Exception as e:
         print(f'[calendar] 取得失敗: {e}')
+        # フォールバック: 月の全日付を生成
+        _, last_day = calendar.monthrange(year, month)
+        for d in range(1, last_day + 1):
+            dates.append(f'{year}{str(month).zfill(2)}{str(d).zfill(2)}')
+        print(f'[calendar] フォールバック: {len(dates)}日分を試みます')
+
     return dates
 
-# ============================================================
-# ステップ2: race_list.html から race_id を取得
-# ============================================================
-def get_race_ids_for_date(kaisai_date: str) -> list:
-    """
-    race_list.html?kaisai_date=YYYYMMDD のDOMから
-    myhorse_{race_id} 要素のIDを収集してrace_idリストを返す
-    """
-    url     = f'https://race.netkeiba.com/top/race_list.html?kaisai_date={kaisai_date}'
-    session = _get_session()
-    race_ids = []
-    try:
-        resp = session.get(url, timeout=15)
-        resp.encoding = 'EUC-JP'
-        soup = BeautifulSoup(resp.text, 'html.parser')
-        session.headers.update({'Referer': url})
-        _sleep()
-
-        # myhorse_{race_id} の要素からrace_idを抽出
-        for el in soup.select('[id^="myhorse_"]'):
-            el_id = el.get('id', '')
-            m = re.match(r'myhorse_(\d{12})', el_id)
-            if m:
-                race_id = m.group(1)
-                # JRAのみ（場コード 01〜10）、新馬戦は後でフィルタ
-                venue = race_id[4:6]
-                if venue in JRA_VENUE_CODES:
-                    race_ids.append(race_id)
-
-        race_ids = sorted(set(race_ids))
-        print(f'  [{kaisai_date}] {len(race_ids)}レース取得')
-    except Exception as e:
-        print(f'  [{kaisai_date}] race_id取得失敗: {e}')
-    return race_ids
 
 # ============================================================
-# ステップ3: レース結果を取得
+# レース結果取得（race.netkeiba.com）
 # ============================================================
 def fetch_race_result(race_id: str):
     global _session_count
@@ -168,9 +182,9 @@ def fetch_race_result(race_id: str):
             table = soup.select_one('.race_table_01') or soup.select_one('#race_result_tbl')
             if not table: return None
 
-            # 新馬戦を除外（ページタイトルや race_class から判定）
-            page_text = soup.get_text()
-            if '新馬' in page_text[:2000]:
+            # 新馬戦を除外
+            race_data_el = soup.select_one('.RaceData01') or soup.select_one('.race_class')
+            if race_data_el and '新馬' in race_data_el.text:
                 return None
 
             session.headers.update({'Referer': url})
@@ -187,6 +201,7 @@ def fetch_race_result(race_id: str):
             print(f'[scraper] エラー: {e}')
             time.sleep(2 * (attempt + 1))
     return None
+
 
 def _parse_horses(soup):
     horses = []
@@ -217,6 +232,7 @@ def _parse_horses(soup):
         })
     return horses
 
+
 def _parse_payouts(soup):
     payouts = {}
     payout_types = ('単勝','複勝','枠連','馬連','ワイド','馬単','3連複','3連単')
@@ -239,6 +255,7 @@ def _parse_payouts(soup):
                 except ValueError: pass
     return payouts
 
+
 # ============================================================
 # 月単位取得メイン
 # ============================================================
@@ -256,13 +273,13 @@ def fetch_month(year: int, month: int, skip_existing: bool = True):
         except Exception:
             pass
 
-    # 開催日リストを取得
+    # ステップ1: 開催日リストを取得
     kaisai_dates = get_kaisai_dates(year, month)
     if not kaisai_dates:
         print(f'[fetch_month] {year}年{month}月: 開催日なし')
         return {}
 
-    # 各開催日からrace_idを収集
+    # ステップ2: db.netkeiba.com から各日のrace_idを収集
     all_race_ids = []
     for kd in kaisai_dates:
         ids = get_race_ids_for_date(kd)
@@ -272,7 +289,11 @@ def fetch_month(year: int, month: int, skip_existing: bool = True):
     all_race_ids = sorted(set(all_race_ids))
     print(f'[fetch_month] {year}年{month}月: 合計{len(all_race_ids)}レース')
 
-    # 各レースの結果を取得
+    if not all_race_ids:
+        print(f'[fetch_month] race_idが0件 → スキップ')
+        return existing
+
+    # ステップ3: 各レースの結果を取得
     new_data = dict(existing)
     success = skip = error = 0
 
@@ -291,7 +312,7 @@ def fetch_month(year: int, month: int, skip_existing: bool = True):
             if result:
                 new_data[race_id] = result
                 success += 1
-                if success <= 3 or success % 20 == 0:
+                if success <= 5 or success % 20 == 0:
                     print(f'  [{i}/{len(all_race_ids)}] {race_id} ✓ ({len(result["horses"])}頭)')
         except Exception as e:
             print(f'  [{i}/{len(all_race_ids)}] {race_id} エラー: {e}')
@@ -310,6 +331,7 @@ def fetch_month(year: int, month: int, skip_existing: bool = True):
     print(f'[fetch_month] 完了: 取得={success}, スキップ={skip}, エラー={error}')
     print(f'[fetch_month] 保存: {output_path} ({len(new_data)}件)')
     return new_data
+
 
 # ============================================================
 # CLI
