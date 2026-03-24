@@ -1,1 +1,2261 @@
-{}
+{
+  "202406040301": {
+    "race_id": "202406040301",
+    "horses": [
+      {
+        "name": "アルデショワ",
+        "finish_rank": 1,
+        "agari_3f": 38.0,
+        "corner_orders": [
+          1,
+          1
+        ],
+        "last_corner": 1
+      },
+      {
+        "name": "ポップグルーヴ",
+        "finish_rank": 2,
+        "agari_3f": 39.0,
+        "corner_orders": [
+          4,
+          4
+        ],
+        "last_corner": 4
+      },
+      {
+        "name": "チュラット",
+        "finish_rank": 3,
+        "agari_3f": 38.9,
+        "corner_orders": [
+          7,
+          5
+        ],
+        "last_corner": 5
+      },
+      {
+        "name": "セイウングレイ",
+        "finish_rank": 4,
+        "agari_3f": 37.9,
+        "corner_orders": [
+          13,
+          12
+        ],
+        "last_corner": 12
+      },
+      {
+        "name": "グランシャット",
+        "finish_rank": 5,
+        "agari_3f": 38.9,
+        "corner_orders": [
+          9,
+          8
+        ],
+        "last_corner": 8
+      },
+      {
+        "name": "セラード",
+        "finish_rank": 6,
+        "agari_3f": 37.6,
+        "corner_orders": [
+          14,
+          14
+        ],
+        "last_corner": 14
+      },
+      {
+        "name": "サードウインド",
+        "finish_rank": 7,
+        "agari_3f": 39.2,
+        "corner_orders": [
+          8,
+          10
+        ],
+        "last_corner": 10
+      },
+      {
+        "name": "キタノフローラ",
+        "finish_rank": 8,
+        "agari_3f": 39.8,
+        "corner_orders": [
+          3,
+          3
+        ],
+        "last_corner": 3
+      },
+      {
+        "name": "ネーブルオレンジ",
+        "finish_rank": 9,
+        "agari_3f": 39.6,
+        "corner_orders": [
+          6,
+          7
+        ],
+        "last_corner": 7
+      },
+      {
+        "name": "エイトビートレター",
+        "finish_rank": 10,
+        "agari_3f": 39.5,
+        "corner_orders": [
+          9,
+          8
+        ],
+        "last_corner": 8
+      },
+      {
+        "name": "ラブミーハーパー",
+        "finish_rank": 11,
+        "agari_3f": 39.3,
+        "corner_orders": [
+          11,
+          11
+        ],
+        "last_corner": 11
+      },
+      {
+        "name": "ニシノコイネガイ",
+        "finish_rank": 12,
+        "agari_3f": 39.2,
+        "corner_orders": [
+          11,
+          12
+        ],
+        "last_corner": 12
+      },
+      {
+        "name": "ユリ",
+        "finish_rank": 13,
+        "agari_3f": 40.3,
+        "corner_orders": [
+          2,
+          2
+        ],
+        "last_corner": 2
+      },
+      {
+        "name": "ハニーアイリー",
+        "finish_rank": 14,
+        "agari_3f": 40.6,
+        "corner_orders": [
+          4,
+          5
+        ],
+        "last_corner": 5
+      }
+    ],
+    "payouts": {
+      "単勝": [
+        {
+          "horses": "7",
+          "payout": 200
+        }
+      ],
+      "複勝": [
+        {
+          "horses": "7",
+          "payout": 110
+        },
+        {
+          "horses": "10",
+          "payout": 3470
+        },
+        {
+          "horses": "12",
+          "payout": 4400
+        }
+      ],
+      "枠連": [
+        {
+          "horses": "5 - 6",
+          "payout": 3660
+        }
+      ],
+      "馬連": [
+        {
+          "horses": "7 - 10",
+          "payout": 18530
+        }
+      ],
+      "ワイド": [
+        {
+          "horses": "7 - 10",
+          "payout": 5790
+        },
+        {
+          "horses": "7 - 12",
+          "payout": 8790
+        },
+        {
+          "horses": "10 - 12",
+          "payout": 88770
+        }
+      ],
+      "馬単": [
+        {
+          "horses": "7 → 10",
+          "payout": 25420
+        }
+      ],
+      "三連複": [
+        {
+          "horses": "7 - 10 - 12",
+          "payout": 544890
+        }
+      ],
+      "三連単": [
+        {
+          "horses": "7 → 10 → 12",
+          "payout": 1504450
+        }
+      ]
+    }
+  },
+  "202406040302": {
+    "race_id": "202406040302",
+    "horses": [
+      {
+        "name": "シャイニーシップ",
+        "finish_rank": 1,
+        "agari_3f": 38.7,
+        "corner_orders": [
+          6,
+          6,
+          3,
+          2
+        ],
+        "last_corner": 2
+      },
+      {
+        "name": "ヴィーデ",
+        "finish_rank": 2,
+        "agari_3f": 39.6,
+        "corner_orders": [
+          1,
+          1,
+          1,
+          1
+        ],
+        "last_corner": 1
+      },
+      {
+        "name": "ニューファウンド",
+        "finish_rank": 3,
+        "agari_3f": 40.5,
+        "corner_orders": [
+          3,
+          3,
+          2,
+          3
+        ],
+        "last_corner": 3
+      },
+      {
+        "name": "ノーブルプライム",
+        "finish_rank": 4,
+        "agari_3f": 40.5,
+        "corner_orders": [
+          4,
+          4,
+          5,
+          4
+        ],
+        "last_corner": 4
+      },
+      {
+        "name": "ナックシュバリエ",
+        "finish_rank": 5,
+        "agari_3f": 40.3,
+        "corner_orders": [
+          7,
+          7,
+          6,
+          4
+        ],
+        "last_corner": 4
+      },
+      {
+        "name": "バレアリックシー",
+        "finish_rank": 6,
+        "agari_3f": 40.9,
+        "corner_orders": [
+          8,
+          8,
+          6,
+          6
+        ],
+        "last_corner": 6
+      },
+      {
+        "name": "スマートクオーレ",
+        "finish_rank": 7,
+        "agari_3f": 40.2,
+        "corner_orders": [
+          12,
+          12,
+          12,
+          12
+        ],
+        "last_corner": 12
+      },
+      {
+        "name": "マイネルラカイユ",
+        "finish_rank": 8,
+        "agari_3f": 41.0,
+        "corner_orders": [
+          10,
+          10,
+          9,
+          8
+        ],
+        "last_corner": 8
+      },
+      {
+        "name": "アルカナエ",
+        "finish_rank": 9,
+        "agari_3f": 42.0,
+        "corner_orders": [
+          5,
+          4,
+          8,
+          9
+        ],
+        "last_corner": 9
+      },
+      {
+        "name": "ギリギリバイター",
+        "finish_rank": 10,
+        "agari_3f": 41.5,
+        "corner_orders": [
+          10,
+          11,
+          10,
+          9
+        ],
+        "last_corner": 9
+      },
+      {
+        "name": "キタノエーシン",
+        "finish_rank": 11,
+        "agari_3f": 42.0,
+        "corner_orders": [
+          9,
+          8,
+          10,
+          11
+        ],
+        "last_corner": 11
+      },
+      {
+        "name": "マーレリアン",
+        "finish_rank": 12,
+        "agari_3f": 45.5,
+        "corner_orders": [
+          2,
+          2,
+          3,
+          7
+        ],
+        "last_corner": 7
+      }
+    ],
+    "payouts": {
+      "単勝": [
+        {
+          "horses": "12",
+          "payout": 860
+        }
+      ],
+      "複勝": [
+        {
+          "horses": "12",
+          "payout": 170
+        },
+        {
+          "horses": "3",
+          "payout": 110
+        },
+        {
+          "horses": "4",
+          "payout": 120
+        }
+      ],
+      "枠連": [
+        {
+          "horses": "3 - 8",
+          "payout": 360
+        }
+      ],
+      "馬連": [
+        {
+          "horses": "3 - 12",
+          "payout": 660
+        }
+      ],
+      "ワイド": [
+        {
+          "horses": "3 - 12",
+          "payout": 280
+        },
+        {
+          "horses": "4 - 12",
+          "payout": 480
+        },
+        {
+          "horses": "3 - 4",
+          "payout": 170
+        }
+      ],
+      "馬単": [
+        {
+          "horses": "12 → 3",
+          "payout": 2240
+        }
+      ],
+      "三連複": [
+        {
+          "horses": "3 - 4 - 12",
+          "payout": 990
+        }
+      ],
+      "三連単": [
+        {
+          "horses": "12 → 3 → 4",
+          "payout": 8930
+        }
+      ]
+    }
+  },
+  "202406040303": {
+    "race_id": "202406040303",
+    "horses": [
+      {
+        "name": "コムーネ",
+        "finish_rank": 1,
+        "agari_3f": 34.4,
+        "corner_orders": [
+          1,
+          1
+        ],
+        "last_corner": 1
+      },
+      {
+        "name": "シュラフ",
+        "finish_rank": 2,
+        "agari_3f": 34.4,
+        "corner_orders": [
+          2,
+          2
+        ],
+        "last_corner": 2
+      },
+      {
+        "name": "ラトルシェ",
+        "finish_rank": 3,
+        "agari_3f": 34.0,
+        "corner_orders": [
+          5,
+          5
+        ],
+        "last_corner": 5
+      },
+      {
+        "name": "オカゲサン",
+        "finish_rank": 4,
+        "agari_3f": 34.2,
+        "corner_orders": [
+          4,
+          4
+        ],
+        "last_corner": 4
+      },
+      {
+        "name": "コンスピラシー",
+        "finish_rank": 5,
+        "agari_3f": 34.1,
+        "corner_orders": [
+          7,
+          7
+        ],
+        "last_corner": 7
+      },
+      {
+        "name": "テイオームサシ",
+        "finish_rank": 6,
+        "agari_3f": 34.4,
+        "corner_orders": [
+          5,
+          5
+        ],
+        "last_corner": 5
+      },
+      {
+        "name": "キープサインオン",
+        "finish_rank": 7,
+        "agari_3f": 34.3,
+        "corner_orders": [
+          8,
+          8
+        ],
+        "last_corner": 8
+      },
+      {
+        "name": "ランニングホット",
+        "finish_rank": 8,
+        "agari_3f": 34.1,
+        "corner_orders": [
+          12,
+          10
+        ],
+        "last_corner": 10
+      },
+      {
+        "name": "リケアコンパンナ",
+        "finish_rank": 9,
+        "agari_3f": 34.8,
+        "corner_orders": [
+          8,
+          9
+        ],
+        "last_corner": 9
+      },
+      {
+        "name": "メモリーフィルム",
+        "finish_rank": 10,
+        "agari_3f": 35.5,
+        "corner_orders": [
+          11,
+          10
+        ],
+        "last_corner": 10
+      },
+      {
+        "name": "ベストヒューマ",
+        "finish_rank": 11,
+        "agari_3f": 35.4,
+        "corner_orders": [
+          12,
+          12
+        ],
+        "last_corner": 12
+      },
+      {
+        "name": "ナックカイザー",
+        "finish_rank": 12,
+        "agari_3f": 35.0,
+        "corner_orders": [
+          14,
+          14
+        ],
+        "last_corner": 14
+      },
+      {
+        "name": "ヴェロニカペルシカ",
+        "finish_rank": 13,
+        "agari_3f": 36.0,
+        "corner_orders": [
+          10,
+          12
+        ],
+        "last_corner": 12
+      }
+    ],
+    "payouts": {
+      "単勝": [
+        {
+          "horses": "4",
+          "payout": 3860
+        }
+      ],
+      "複勝": [
+        {
+          "horses": "4",
+          "payout": 680
+        },
+        {
+          "horses": "9",
+          "payout": 300
+        },
+        {
+          "horses": "5",
+          "payout": 200
+        }
+      ],
+      "枠連": [
+        {
+          "horses": "3 - 6",
+          "payout": 8080
+        }
+      ],
+      "馬連": [
+        {
+          "horses": "4 - 9",
+          "payout": 9340
+        }
+      ],
+      "ワイド": [
+        {
+          "horses": "4 - 9",
+          "payout": 1980
+        },
+        {
+          "horses": "4 - 5",
+          "payout": 1680
+        },
+        {
+          "horses": "5 - 9",
+          "payout": 790
+        }
+      ],
+      "馬単": [
+        {
+          "horses": "4 → 9",
+          "payout": 30490
+        }
+      ],
+      "三連複": [
+        {
+          "horses": "4 - 5 - 9",
+          "payout": 12020
+        }
+      ],
+      "三連単": [
+        {
+          "horses": "4 → 9 → 5",
+          "payout": 120310
+        }
+      ]
+    }
+  },
+  "202406040306": {
+    "race_id": "202406040306",
+    "horses": [
+      {
+        "name": "オリビアジュテーム",
+        "finish_rank": 1,
+        "agari_3f": 37.1,
+        "corner_orders": [
+          2,
+          2
+        ],
+        "last_corner": 2
+      },
+      {
+        "name": "ホーリーブライト",
+        "finish_rank": 2,
+        "agari_3f": 36.8,
+        "corner_orders": [
+          3,
+          3
+        ],
+        "last_corner": 3
+      },
+      {
+        "name": "フォルクスリート",
+        "finish_rank": 3,
+        "agari_3f": 36.3,
+        "corner_orders": [
+          9,
+          7
+        ],
+        "last_corner": 7
+      },
+      {
+        "name": "シュヴァルツリーベ",
+        "finish_rank": 4,
+        "agari_3f": 37.0,
+        "corner_orders": [
+          5,
+          6
+        ],
+        "last_corner": 6
+      },
+      {
+        "name": "ゼンノツキヨミ",
+        "finish_rank": 5,
+        "agari_3f": 37.0,
+        "corner_orders": [
+          5,
+          7
+        ],
+        "last_corner": 7
+      },
+      {
+        "name": "ラッキーガブリエル",
+        "finish_rank": 6,
+        "agari_3f": 37.9,
+        "corner_orders": [
+          1,
+          1
+        ],
+        "last_corner": 1
+      },
+      {
+        "name": "メイプルリーフラグ",
+        "finish_rank": 7,
+        "agari_3f": 36.7,
+        "corner_orders": [
+          11,
+          10
+        ],
+        "last_corner": 10
+      },
+      {
+        "name": "クイーンオブソウル",
+        "finish_rank": 8,
+        "agari_3f": 36.9,
+        "corner_orders": [
+          15,
+          15
+        ],
+        "last_corner": 15
+      },
+      {
+        "name": "パイアイヤー",
+        "finish_rank": 9,
+        "agari_3f": 37.2,
+        "corner_orders": [
+          11,
+          10
+        ],
+        "last_corner": 10
+      },
+      {
+        "name": "ノーブルミステリー",
+        "finish_rank": 10,
+        "agari_3f": 37.3,
+        "corner_orders": [
+          11,
+          13
+        ],
+        "last_corner": 13
+      },
+      {
+        "name": "ロザシアニン",
+        "finish_rank": 11,
+        "agari_3f": 38.3,
+        "corner_orders": [
+          3,
+          4
+        ],
+        "last_corner": 4
+      },
+      {
+        "name": "マケズギライ",
+        "finish_rank": 12,
+        "agari_3f": 37.7,
+        "corner_orders": [
+          11,
+          13
+        ],
+        "last_corner": 13
+      },
+      {
+        "name": "クィーンアドバンス",
+        "finish_rank": 13,
+        "agari_3f": 37.9,
+        "corner_orders": [
+          9,
+          9
+        ],
+        "last_corner": 9
+      },
+      {
+        "name": "リオサラ",
+        "finish_rank": 14,
+        "agari_3f": 37.1,
+        "corner_orders": [
+          16,
+          16
+        ],
+        "last_corner": 16
+      },
+      {
+        "name": "シエラメンテ",
+        "finish_rank": 15,
+        "agari_3f": 38.5,
+        "corner_orders": [
+          8,
+          10
+        ],
+        "last_corner": 10
+      },
+      {
+        "name": "サクラファシナンテ",
+        "finish_rank": 16,
+        "agari_3f": 38.7,
+        "corner_orders": [
+          5,
+          4
+        ],
+        "last_corner": 4
+      }
+    ],
+    "payouts": {
+      "単勝": [
+        {
+          "horses": "6",
+          "payout": 400
+        }
+      ],
+      "複勝": [
+        {
+          "horses": "6",
+          "payout": 160
+        },
+        {
+          "horses": "5",
+          "payout": 260
+        },
+        {
+          "horses": "7",
+          "payout": 190
+        }
+      ],
+      "枠連": [
+        {
+          "horses": "3 - 3",
+          "payout": 1600
+        }
+      ],
+      "馬連": [
+        {
+          "horses": "5 - 6",
+          "payout": 1800
+        }
+      ],
+      "ワイド": [
+        {
+          "horses": "5 - 6",
+          "payout": 750
+        },
+        {
+          "horses": "6 - 7",
+          "payout": 550
+        },
+        {
+          "horses": "5 - 7",
+          "payout": 1460
+        }
+      ],
+      "馬単": [
+        {
+          "horses": "6 → 5",
+          "payout": 3160
+        }
+      ],
+      "三連複": [
+        {
+          "horses": "5 - 6 - 7",
+          "payout": 3940
+        }
+      ],
+      "三連単": [
+        {
+          "horses": "6 → 5 → 7",
+          "payout": 19370
+        }
+      ]
+    }
+  },
+  "202406040307": {
+    "race_id": "202406040307",
+    "horses": [
+      {
+        "name": "エメリヨン",
+        "finish_rank": 1,
+        "agari_3f": 35.0,
+        "corner_orders": [
+          3,
+          3,
+          4,
+          2
+        ],
+        "last_corner": 2
+      },
+      {
+        "name": "ワンダフルヘヴン",
+        "finish_rank": 2,
+        "agari_3f": 35.4,
+        "corner_orders": [
+          5,
+          5,
+          6,
+          4
+        ],
+        "last_corner": 4
+      },
+      {
+        "name": "ニシノコイゴコロ",
+        "finish_rank": 3,
+        "agari_3f": 35.6,
+        "corner_orders": [
+          5,
+          5,
+          6,
+          6
+        ],
+        "last_corner": 6
+      },
+      {
+        "name": "マイファミリー",
+        "finish_rank": 4,
+        "agari_3f": 36.0,
+        "corner_orders": [
+          3,
+          3,
+          4,
+          4
+        ],
+        "last_corner": 4
+      },
+      {
+        "name": "パッカパッカブー",
+        "finish_rank": 5,
+        "agari_3f": 35.7,
+        "corner_orders": [
+          7,
+          7,
+          8,
+          8
+        ],
+        "last_corner": 8
+      },
+      {
+        "name": "チャイボーグ",
+        "finish_rank": 6,
+        "agari_3f": 35.0,
+        "corner_orders": [
+          10,
+          10,
+          10,
+          9
+        ],
+        "last_corner": 9
+      },
+      {
+        "name": "エコロマーベリック",
+        "finish_rank": 7,
+        "agari_3f": 36.6,
+        "corner_orders": [
+          2,
+          2,
+          2,
+          2
+        ],
+        "last_corner": 2
+      },
+      {
+        "name": "ソウルアンドジャズ",
+        "finish_rank": 8,
+        "agari_3f": 38.4,
+        "corner_orders": [
+          9,
+          8,
+          1,
+          1
+        ],
+        "last_corner": 1
+      },
+      {
+        "name": "ライヴァル",
+        "finish_rank": 9,
+        "agari_3f": 37.8,
+        "corner_orders": [
+          8,
+          8,
+          9,
+          10
+        ],
+        "last_corner": 10
+      },
+      {
+        "name": "カイゼルスベルグ",
+        "finish_rank": 10,
+        "agari_3f": 40.5,
+        "corner_orders": [
+          1,
+          1,
+          2,
+          6
+        ],
+        "last_corner": 6
+      }
+    ],
+    "payouts": {
+      "単勝": [
+        {
+          "horses": "6",
+          "payout": 250
+        }
+      ],
+      "複勝": [
+        {
+          "horses": "6",
+          "payout": 130
+        },
+        {
+          "horses": "1",
+          "payout": 1730
+        },
+        {
+          "horses": "5",
+          "payout": 180
+        }
+      ],
+      "枠連": [
+        {
+          "horses": "1 - 6",
+          "payout": 16790
+        }
+      ],
+      "馬連": [
+        {
+          "horses": "1 - 6",
+          "payout": 21120
+        }
+      ],
+      "ワイド": [
+        {
+          "horses": "1 - 6",
+          "payout": 4780
+        },
+        {
+          "horses": "5 - 6",
+          "payout": 260
+        },
+        {
+          "horses": "1 - 5",
+          "payout": 7670
+        }
+      ],
+      "馬単": [
+        {
+          "horses": "6 → 1",
+          "payout": 24400
+        }
+      ],
+      "三連複": [
+        {
+          "horses": "1 - 5 - 6",
+          "payout": 18350
+        }
+      ],
+      "三連単": [
+        {
+          "horses": "6 → 1 → 5",
+          "payout": 127560
+        }
+      ]
+    }
+  },
+  "202406040308": {
+    "race_id": "202406040308",
+    "horses": [
+      {
+        "name": "シグムンド",
+        "finish_rank": 1,
+        "agari_3f": 37.8,
+        "corner_orders": [
+          3,
+          3,
+          3,
+          2
+        ],
+        "last_corner": 2
+      },
+      {
+        "name": "タナバタ",
+        "finish_rank": 2,
+        "agari_3f": 38.7,
+        "corner_orders": [
+          1,
+          1,
+          1,
+          1
+        ],
+        "last_corner": 1
+      },
+      {
+        "name": "ネオシルバー",
+        "finish_rank": 3,
+        "agari_3f": 38.1,
+        "corner_orders": [
+          7,
+          7,
+          7,
+          6
+        ],
+        "last_corner": 6
+      },
+      {
+        "name": "タイセイアディクト",
+        "finish_rank": 4,
+        "agari_3f": 38.2,
+        "corner_orders": [
+          10,
+          9,
+          7,
+          6
+        ],
+        "last_corner": 6
+      },
+      {
+        "name": "クレイヴィンオナー",
+        "finish_rank": 5,
+        "agari_3f": 37.9,
+        "corner_orders": [
+          8,
+          7,
+          9,
+          8
+        ],
+        "last_corner": 8
+      },
+      {
+        "name": "サイモンポーリア",
+        "finish_rank": 6,
+        "agari_3f": 39.4,
+        "corner_orders": [
+          2,
+          2,
+          2,
+          2
+        ],
+        "last_corner": 2
+      },
+      {
+        "name": "サクセスパルス",
+        "finish_rank": 7,
+        "agari_3f": 39.1,
+        "corner_orders": [
+          15,
+          15,
+          3,
+          2
+        ],
+        "last_corner": 2
+      },
+      {
+        "name": "ダノンアーリー",
+        "finish_rank": 8,
+        "agari_3f": 38.2,
+        "corner_orders": [
+          14,
+          14,
+          14,
+          9
+        ],
+        "last_corner": 9
+      },
+      {
+        "name": "トロピカルタウン",
+        "finish_rank": 9,
+        "agari_3f": 38.8,
+        "corner_orders": [
+          8,
+          9,
+          13,
+          13
+        ],
+        "last_corner": 13
+      },
+      {
+        "name": "キタノマキシム",
+        "finish_rank": 10,
+        "agari_3f": 40.1,
+        "corner_orders": [
+          3,
+          3,
+          3,
+          5
+        ],
+        "last_corner": 5
+      },
+      {
+        "name": "タキザクラ",
+        "finish_rank": 11,
+        "agari_3f": 40.1,
+        "corner_orders": [
+          3,
+          3,
+          3,
+          9
+        ],
+        "last_corner": 9
+      },
+      {
+        "name": "ベルフィーヌ",
+        "finish_rank": 12,
+        "agari_3f": 39.6,
+        "corner_orders": [
+          10,
+          9,
+          9,
+          9
+        ],
+        "last_corner": 9
+      },
+      {
+        "name": "ムーランブルー",
+        "finish_rank": 13,
+        "agari_3f": 39.1,
+        "corner_orders": [
+          12,
+          12,
+          15,
+          14
+        ],
+        "last_corner": 14
+      },
+      {
+        "name": "クリスプブリーズ",
+        "finish_rank": 14,
+        "agari_3f": 40.3,
+        "corner_orders": [
+          12,
+          12,
+          9,
+          12
+        ],
+        "last_corner": 12
+      },
+      {
+        "name": "グレースレニー",
+        "finish_rank": 15,
+        "agari_3f": 44.6,
+        "corner_orders": [
+          3,
+          6,
+          9,
+          15
+        ],
+        "last_corner": 15
+      }
+    ],
+    "payouts": {
+      "単勝": [
+        {
+          "horses": "7",
+          "payout": 910
+        }
+      ],
+      "複勝": [
+        {
+          "horses": "7",
+          "payout": 250
+        },
+        {
+          "horses": "10",
+          "payout": 500
+        },
+        {
+          "horses": "15",
+          "payout": 180
+        }
+      ],
+      "枠連": [
+        {
+          "horses": "4 - 6",
+          "payout": 3150
+        }
+      ],
+      "馬連": [
+        {
+          "horses": "7 - 10",
+          "payout": 15660
+        }
+      ],
+      "ワイド": [
+        {
+          "horses": "7 - 10",
+          "payout": 3430
+        },
+        {
+          "horses": "7 - 15",
+          "payout": 710
+        },
+        {
+          "horses": "10 - 15",
+          "payout": 1880
+        }
+      ],
+      "馬単": [
+        {
+          "horses": "7 → 10",
+          "payout": 33080
+        }
+      ],
+      "三連複": [
+        {
+          "horses": "7 - 10 - 15",
+          "payout": 26670
+        }
+      ],
+      "三連単": [
+        {
+          "horses": "7 → 10 → 15",
+          "payout": 221180
+        }
+      ]
+    }
+  },
+  "202406040309": {
+    "race_id": "202406040309",
+    "horses": [
+      {
+        "name": "ロードマゼラン",
+        "finish_rank": 1,
+        "agari_3f": 38.2,
+        "corner_orders": [
+          1,
+          1,
+          1,
+          1
+        ],
+        "last_corner": 1
+      },
+      {
+        "name": "メイプルタピット",
+        "finish_rank": 2,
+        "agari_3f": 38.3,
+        "corner_orders": [
+          4,
+          5,
+          3,
+          2
+        ],
+        "last_corner": 2
+      },
+      {
+        "name": "サトノトルネード",
+        "finish_rank": 3,
+        "agari_3f": 39.0,
+        "corner_orders": [
+          3,
+          3,
+          2,
+          2
+        ],
+        "last_corner": 2
+      },
+      {
+        "name": "ネイチャーシップ",
+        "finish_rank": 4,
+        "agari_3f": 38.4,
+        "corner_orders": [
+          15,
+          15,
+          11,
+          7
+        ],
+        "last_corner": 7
+      },
+      {
+        "name": "トクシースタローン",
+        "finish_rank": 5,
+        "agari_3f": 38.9,
+        "corner_orders": [
+          12,
+          12,
+          3,
+          4
+        ],
+        "last_corner": 4
+      },
+      {
+        "name": "サトミノマロン",
+        "finish_rank": 6,
+        "agari_3f": 38.8,
+        "corner_orders": [
+          9,
+          7,
+          8,
+          6
+        ],
+        "last_corner": 6
+      },
+      {
+        "name": "トゥルブレンシア",
+        "finish_rank": 7,
+        "agari_3f": 38.6,
+        "corner_orders": [
+          13,
+          13,
+          11,
+          8
+        ],
+        "last_corner": 8
+      },
+      {
+        "name": "フォーワンセルフ",
+        "finish_rank": 8,
+        "agari_3f": 39.4,
+        "corner_orders": [
+          15,
+          15,
+          8,
+          5
+        ],
+        "last_corner": 5
+      },
+      {
+        "name": "クリーンドリーム",
+        "finish_rank": 9,
+        "agari_3f": 40.1,
+        "corner_orders": [
+          9,
+          10,
+          8,
+          9
+        ],
+        "last_corner": 9
+      },
+      {
+        "name": "ヴォーグマチネ",
+        "finish_rank": 10,
+        "agari_3f": 40.8,
+        "corner_orders": [
+          11,
+          10,
+          11,
+          11
+        ],
+        "last_corner": 11
+      },
+      {
+        "name": "ハローサブリナ",
+        "finish_rank": 11,
+        "agari_3f": 41.0,
+        "corner_orders": [
+          4,
+          5,
+          14,
+          15
+        ],
+        "last_corner": 15
+      },
+      {
+        "name": "カフェカルマ",
+        "finish_rank": 12,
+        "agari_3f": 41.3,
+        "corner_orders": [
+          7,
+          7,
+          14,
+          15
+        ],
+        "last_corner": 15
+      },
+      {
+        "name": "マコトヴィクラント",
+        "finish_rank": 13,
+        "agari_3f": 42.2,
+        "corner_orders": [
+          7,
+          7,
+          6,
+          11
+        ],
+        "last_corner": 11
+      },
+      {
+        "name": "コンソレーション",
+        "finish_rank": 14,
+        "agari_3f": 41.9,
+        "corner_orders": [
+          13,
+          13,
+          14,
+          11
+        ],
+        "last_corner": 11
+      },
+      {
+        "name": "コロンドール",
+        "finish_rank": 15,
+        "agari_3f": 43.2,
+        "corner_orders": [
+          2,
+          2,
+          3,
+          9
+        ],
+        "last_corner": 9
+      },
+      {
+        "name": "コウユーパパニニテ",
+        "finish_rank": 16,
+        "agari_3f": 43.3,
+        "corner_orders": [
+          4,
+          4,
+          6,
+          11
+        ],
+        "last_corner": 11
+      }
+    ],
+    "payouts": {
+      "単勝": [
+        {
+          "horses": "2",
+          "payout": 2200
+        }
+      ],
+      "複勝": [
+        {
+          "horses": "2",
+          "payout": 540
+        },
+        {
+          "horses": "7",
+          "payout": 160
+        },
+        {
+          "horses": "8",
+          "payout": 200
+        }
+      ],
+      "枠連": [
+        {
+          "horses": "1 - 4",
+          "payout": 2040
+        }
+      ],
+      "馬連": [
+        {
+          "horses": "2 - 7",
+          "payout": 5760
+        }
+      ],
+      "ワイド": [
+        {
+          "horses": "2 - 7",
+          "payout": 1620
+        },
+        {
+          "horses": "2 - 8",
+          "payout": 1790
+        },
+        {
+          "horses": "7 - 8",
+          "payout": 470
+        }
+      ],
+      "馬単": [
+        {
+          "horses": "2 → 7",
+          "payout": 15720
+        }
+      ],
+      "三連複": [
+        {
+          "horses": "2 - 7 - 8",
+          "payout": 7800
+        }
+      ],
+      "三連単": [
+        {
+          "horses": "2 → 7 → 8",
+          "payout": 90500
+        }
+      ]
+    }
+  },
+  "202406040310": {
+    "race_id": "202406040310",
+    "horses": [
+      {
+        "name": "ポルカリズム",
+        "finish_rank": 1,
+        "agari_3f": 33.4,
+        "corner_orders": [
+          8,
+          7,
+          7
+        ],
+        "last_corner": 7
+      },
+      {
+        "name": "ラレーヌデリス",
+        "finish_rank": 2,
+        "agari_3f": 33.7,
+        "corner_orders": [
+          10,
+          5,
+          3
+        ],
+        "last_corner": 3
+      },
+      {
+        "name": "アンリーロード",
+        "finish_rank": 3,
+        "agari_3f": 33.2,
+        "corner_orders": [
+          8,
+          11,
+          11
+        ],
+        "last_corner": 11
+      },
+      {
+        "name": "ブルトンクール",
+        "finish_rank": 4,
+        "agari_3f": 34.3,
+        "corner_orders": [
+          1,
+          1,
+          1
+        ],
+        "last_corner": 1
+      },
+      {
+        "name": "ロムネヤ",
+        "finish_rank": 5,
+        "agari_3f": 33.7,
+        "corner_orders": [
+          6,
+          7,
+          7
+        ],
+        "last_corner": 7
+      },
+      {
+        "name": "アニトラ",
+        "finish_rank": 6,
+        "agari_3f": 34.1,
+        "corner_orders": [
+          2,
+          4,
+          3
+        ],
+        "last_corner": 3
+      },
+      {
+        "name": "ケイデンシーマーク",
+        "finish_rank": 7,
+        "agari_3f": 33.9,
+        "corner_orders": [
+          4,
+          7,
+          7
+        ],
+        "last_corner": 7
+      },
+      {
+        "name": "ステラバルセロナ",
+        "finish_rank": 8,
+        "agari_3f": 34.0,
+        "corner_orders": [
+          12,
+          7,
+          7
+        ],
+        "last_corner": 7
+      },
+      {
+        "name": "ディヴァージオン",
+        "finish_rank": 9,
+        "agari_3f": 34.8,
+        "corner_orders": [
+          2,
+          2,
+          2
+        ],
+        "last_corner": 2
+      },
+      {
+        "name": "コロンビアテソーロ",
+        "finish_rank": 10,
+        "agari_3f": 34.7,
+        "corner_orders": [
+          6,
+          3,
+          3
+        ],
+        "last_corner": 3
+      },
+      {
+        "name": "ウインレイアー",
+        "finish_rank": 11,
+        "agari_3f": 34.7,
+        "corner_orders": [
+          4,
+          5,
+          3
+        ],
+        "last_corner": 3
+      },
+      {
+        "name": "コスモディナー",
+        "finish_rank": 12,
+        "agari_3f": 33.8,
+        "corner_orders": [
+          10,
+          13,
+          13
+        ],
+        "last_corner": 13
+      },
+      {
+        "name": "ベルシャンブル",
+        "finish_rank": 13,
+        "agari_3f": 34.6,
+        "corner_orders": [
+          12,
+          11,
+          11
+        ],
+        "last_corner": 11
+      }
+    ],
+    "payouts": {
+      "単勝": [
+        {
+          "horses": "6",
+          "payout": 480
+        }
+      ],
+      "複勝": [
+        {
+          "horses": "6",
+          "payout": 170
+        },
+        {
+          "horses": "12",
+          "payout": 330
+        },
+        {
+          "horses": "4",
+          "payout": 190
+        }
+      ],
+      "枠連": [
+        {
+          "horses": "5 - 8",
+          "payout": 910
+        }
+      ],
+      "馬連": [
+        {
+          "horses": "6 - 12",
+          "payout": 3480
+        }
+      ],
+      "ワイド": [
+        {
+          "horses": "6 - 12",
+          "payout": 1040
+        },
+        {
+          "horses": "4 - 6",
+          "payout": 560
+        },
+        {
+          "horses": "4 - 12",
+          "payout": 1100
+        }
+      ],
+      "馬単": [
+        {
+          "horses": "6 → 12",
+          "payout": 5630
+        }
+      ],
+      "三連複": [
+        {
+          "horses": "4 - 6 - 12",
+          "payout": 5740
+        }
+      ],
+      "三連単": [
+        {
+          "horses": "6 → 12 → 4",
+          "payout": 31460
+        }
+      ]
+    }
+  },
+  "202406040311": {
+    "race_id": "202406040311",
+    "horses": [
+      {
+        "name": "エティエンヌ",
+        "finish_rank": 1,
+        "agari_3f": 35.9,
+        "corner_orders": [
+          10,
+          9
+        ],
+        "last_corner": 9
+      },
+      {
+        "name": "エコロガイア",
+        "finish_rank": 2,
+        "agari_3f": 37.0,
+        "corner_orders": [
+          2,
+          2
+        ],
+        "last_corner": 2
+      },
+      {
+        "name": "スマートアイ",
+        "finish_rank": 3,
+        "agari_3f": 37.8,
+        "corner_orders": [
+          1,
+          1
+        ],
+        "last_corner": 1
+      },
+      {
+        "name": "クールムーア",
+        "finish_rank": 4,
+        "agari_3f": 37.3,
+        "corner_orders": [
+          4,
+          3
+        ],
+        "last_corner": 3
+      },
+      {
+        "name": "タイセイブリリオ",
+        "finish_rank": 5,
+        "agari_3f": 37.0,
+        "corner_orders": [
+          9,
+          8
+        ],
+        "last_corner": 8
+      },
+      {
+        "name": "グリュースゴット",
+        "finish_rank": 6,
+        "agari_3f": 37.2,
+        "corner_orders": [
+          7,
+          5
+        ],
+        "last_corner": 5
+      },
+      {
+        "name": "ロレンツォ",
+        "finish_rank": 7,
+        "agari_3f": 36.1,
+        "corner_orders": [
+          13,
+          12
+        ],
+        "last_corner": 12
+      },
+      {
+        "name": "ケイアイアニラ",
+        "finish_rank": 8,
+        "agari_3f": 37.6,
+        "corner_orders": [
+          4,
+          6
+        ],
+        "last_corner": 6
+      },
+      {
+        "name": "オーロベルディ",
+        "finish_rank": 9,
+        "agari_3f": 37.7,
+        "corner_orders": [
+          4,
+          6
+        ],
+        "last_corner": 6
+      },
+      {
+        "name": "オーガスタスカイ",
+        "finish_rank": 10,
+        "agari_3f": 36.5,
+        "corner_orders": [
+          13,
+          12
+        ],
+        "last_corner": 12
+      },
+      {
+        "name": "アジアノジュンシン",
+        "finish_rank": 11,
+        "agari_3f": 36.7,
+        "corner_orders": [
+          12,
+          11
+        ],
+        "last_corner": 11
+      },
+      {
+        "name": "エレガントムーン",
+        "finish_rank": 12,
+        "agari_3f": 36.9,
+        "corner_orders": [
+          11,
+          14
+        ],
+        "last_corner": 14
+      },
+      {
+        "name": "ユリーシャ",
+        "finish_rank": 13,
+        "agari_3f": 38.0,
+        "corner_orders": [
+          7,
+          9
+        ],
+        "last_corner": 9
+      },
+      {
+        "name": "トーアアイギス",
+        "finish_rank": 14,
+        "agari_3f": 38.5,
+        "corner_orders": [
+          2,
+          3
+        ],
+        "last_corner": 3
+      },
+      {
+        "name": "ナスノカンゲツ",
+        "finish_rank": 15,
+        "agari_3f": 37.0,
+        "corner_orders": [
+          15,
+          14
+        ],
+        "last_corner": 14
+      },
+      {
+        "name": "ビルカール",
+        "finish_rank": 16,
+        "agari_3f": 38.0,
+        "corner_orders": [
+          15,
+          14
+        ],
+        "last_corner": 14
+      }
+    ],
+    "payouts": {
+      "単勝": [
+        {
+          "horses": "6",
+          "payout": 660
+        }
+      ],
+      "複勝": [
+        {
+          "horses": "6",
+          "payout": 200
+        },
+        {
+          "horses": "15",
+          "payout": 180
+        },
+        {
+          "horses": "14",
+          "payout": 280
+        }
+      ],
+      "枠連": [
+        {
+          "horses": "3 - 8",
+          "payout": 570
+        }
+      ],
+      "馬連": [
+        {
+          "horses": "6 - 15",
+          "payout": 1430
+        }
+      ],
+      "ワイド": [
+        {
+          "horses": "6 - 15",
+          "payout": 650
+        },
+        {
+          "horses": "6 - 14",
+          "payout": 1120
+        },
+        {
+          "horses": "14 - 15",
+          "payout": 810
+        }
+      ],
+      "馬単": [
+        {
+          "horses": "6 → 15",
+          "payout": 3240
+        }
+      ],
+      "三連複": [
+        {
+          "horses": "6 - 14 - 15",
+          "payout": 4440
+        }
+      ],
+      "三連単": [
+        {
+          "horses": "6 → 15 → 14",
+          "payout": 23780
+        }
+      ]
+    }
+  },
+  "202406040312": {
+    "race_id": "202406040312",
+    "horses": [
+      {
+        "name": "ガールズレジェンド",
+        "finish_rank": 1,
+        "agari_3f": 34.1,
+        "corner_orders": [
+          1,
+          1,
+          1,
+          1
+        ],
+        "last_corner": 1
+      },
+      {
+        "name": "スティックバイミー",
+        "finish_rank": 2,
+        "agari_3f": 34.0,
+        "corner_orders": [
+          4,
+          4,
+          4,
+          3
+        ],
+        "last_corner": 3
+      },
+      {
+        "name": "プリズマジコ",
+        "finish_rank": 3,
+        "agari_3f": 33.9,
+        "corner_orders": [
+          9,
+          9,
+          9,
+          8
+        ],
+        "last_corner": 8
+      },
+      {
+        "name": "デファイ",
+        "finish_rank": 4,
+        "agari_3f": 33.7,
+        "corner_orders": [
+          10,
+          11,
+          11,
+          10
+        ],
+        "last_corner": 10
+      },
+      {
+        "name": "ゴヴェルナーレリコ",
+        "finish_rank": 5,
+        "agari_3f": 34.2,
+        "corner_orders": [
+          7,
+          7,
+          6,
+          5
+        ],
+        "last_corner": 5
+      },
+      {
+        "name": "マイネルオーシャン",
+        "finish_rank": 6,
+        "agari_3f": 34.8,
+        "corner_orders": [
+          4,
+          4,
+          3,
+          3
+        ],
+        "last_corner": 3
+      },
+      {
+        "name": "シルバーニース",
+        "finish_rank": 7,
+        "agari_3f": 34.3,
+        "corner_orders": [
+          10,
+          9,
+          6,
+          5
+        ],
+        "last_corner": 5
+      },
+      {
+        "name": "ナムラドーギー",
+        "finish_rank": 8,
+        "agari_3f": 34.3,
+        "corner_orders": [
+          7,
+          7,
+          9,
+          9
+        ],
+        "last_corner": 9
+      },
+      {
+        "name": "ゴーマックス",
+        "finish_rank": 9,
+        "agari_3f": 33.6,
+        "corner_orders": [
+          15,
+          15,
+          15,
+          15
+        ],
+        "last_corner": 15
+      },
+      {
+        "name": "ナンヨーアゼリア",
+        "finish_rank": 10,
+        "agari_3f": 35.2,
+        "corner_orders": [
+          2,
+          2,
+          2,
+          2
+        ],
+        "last_corner": 2
+      },
+      {
+        "name": "ロンドンアームズ",
+        "finish_rank": 11,
+        "agari_3f": 34.0,
+        "corner_orders": [
+          14,
+          14,
+          13,
+          12
+        ],
+        "last_corner": 12
+      },
+      {
+        "name": "ロコルルハーツ",
+        "finish_rank": 12,
+        "agari_3f": 34.4,
+        "corner_orders": [
+          12,
+          13,
+          11,
+          12
+        ],
+        "last_corner": 12
+      },
+      {
+        "name": "シロノクミキョク",
+        "finish_rank": 13,
+        "agari_3f": 34.3,
+        "corner_orders": [
+          12,
+          12,
+          13,
+          12
+        ],
+        "last_corner": 12
+      },
+      {
+        "name": "グローリーアテイン",
+        "finish_rank": 14,
+        "agari_3f": 35.2,
+        "corner_orders": [
+          4,
+          4,
+          6,
+          10
+        ],
+        "last_corner": 10
+      },
+      {
+        "name": "グラヴィテ",
+        "finish_rank": 15,
+        "agari_3f": 35.8,
+        "corner_orders": [
+          2,
+          2,
+          4,
+          5
+        ],
+        "last_corner": 5
+      }
+    ],
+    "payouts": {
+      "単勝": [
+        {
+          "horses": "4",
+          "payout": 1080
+        }
+      ],
+      "複勝": [
+        {
+          "horses": "4",
+          "payout": 390
+        },
+        {
+          "horses": "2",
+          "payout": 780
+        },
+        {
+          "horses": "10",
+          "payout": 340
+        }
+      ],
+      "枠連": [
+        {
+          "horses": "2 - 3",
+          "payout": 2910
+        }
+      ],
+      "馬連": [
+        {
+          "horses": "2 - 4",
+          "payout": 10680
+        }
+      ],
+      "ワイド": [
+        {
+          "horses": "2 - 4",
+          "payout": 2480
+        },
+        {
+          "horses": "4 - 10",
+          "payout": 1040
+        },
+        {
+          "horses": "2 - 10",
+          "payout": 2460
+        }
+      ],
+      "馬単": [
+        {
+          "horses": "4 → 2",
+          "payout": 22760
+        }
+      ],
+      "三連複": [
+        {
+          "horses": "2 - 4 - 10",
+          "payout": 21790
+        }
+      ],
+      "三連単": [
+        {
+          "horses": "4 → 2 → 10",
+          "payout": 153700
+        }
+      ]
+    }
+  }
+}
