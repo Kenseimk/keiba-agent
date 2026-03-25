@@ -3,7 +3,6 @@ name: fetch-netkeiba-auto
 on:
   schedule:
     - cron: '0 18 * * *'  # 毎日 深夜3時（JST）
-
   workflow_dispatch:
 
 jobs:
@@ -26,9 +25,6 @@ jobs:
       - name: data/ ディレクトリを準備
         run: mkdir -p data
 
-      # -------------------------------------------------------
-      # 未取得月リストを生成
-      # -------------------------------------------------------
       - name: 未取得月リストを生成
         id: check_months
         run: |
@@ -42,21 +38,16 @@ jobs:
 
           done = set()
           for ym in TARGET_MONTHS:
-              path = f'data/netkeiba_{ym.replace("-","")}.json'
-              if os.path.exists(path):
-                  try:
-                      with open(path) as f:
-                          d = json.load(f)
-                      if len(d) > 0:
-                          done.add(ym)
-                  except:
-                      pass
+              ym_key = ym.replace('-','')
+              path = f'data/raceresults_{ym_key}.csv'
+              if os.path.exists(path) and os.path.getsize(path) > 1000:
+                  done.add(ym)
 
           remaining = [ym for ym in TARGET_MONTHS if ym not in done]
 
           print(f'対象: {len(TARGET_MONTHS)}ヶ月')
           print(f'取得済み: {len(done)}ヶ月')
-          print(f'未取得: {len(remaining)}ヶ月 -> {remaining}')
+          print(f'未取得: {len(remaining)}ヶ月')
 
           with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
               f.write(f'remaining={json.dumps(remaining)}\n')
@@ -64,12 +55,7 @@ jobs:
               f.write(f'done_count={len(done)}\n')
               f.write(f'total_count={len(TARGET_MONTHS)}\n')
           PYEOF
-        env:
-          PYTHONPATH: .
 
-      # -------------------------------------------------------
-      # Discord: 開始通知
-      # -------------------------------------------------------
       - name: Discord 開始通知
         if: steps.check_months.outputs.remaining_count != '0'
         run: |
@@ -78,22 +64,19 @@ jobs:
 
           webhook = os.environ.get('DISCORD_WEBHOOK_URL', '')
           if not webhook:
-              print('[Discord] WEBHOOK未設定、スキップ')
               exit(0)
 
-          remaining_raw = os.environ.get('REMAINING', '[]')
-          remaining = json.loads(remaining_raw)
+          remaining = json.loads(os.environ.get('REMAINING', '[]'))
           done_count = int(os.environ.get('DONE_COUNT', '0'))
           total_count = int(os.environ.get('TOTAL_COUNT', '0'))
 
           payload = {
               'embeds': [{
-                  'title': '🏇 netkeiba データ取得 開始',
+                  'title': '🏇 netkeiba CSV取得 開始',
                   'description': (
                       f'**取得済み**: {done_count}/{total_count}ヶ月\n'
                       f'**今回の取得対象**: {len(remaining)}ヶ月\n'
-                      f'```\n{chr(32).join(remaining)}\n```\n'
-                      f'⏱️ 推定所要時間: 約{len(remaining) * 20}分'
+                      f'```{" ".join(remaining)}```'
                   ),
                   'color': 0x3498DB,
               }]
@@ -107,9 +90,6 @@ jobs:
           DONE_COUNT: ${{ steps.check_months.outputs.done_count }}
           TOTAL_COUNT: ${{ steps.check_months.outputs.total_count }}
 
-      # -------------------------------------------------------
-      # 全取得済みの場合
-      # -------------------------------------------------------
       - name: 全取得済みの場合の通知
         if: steps.check_months.outputs.remaining_count == '0'
         run: |
@@ -122,7 +102,7 @@ jobs:
 
           payload = {
               'embeds': [{
-                  'title': '✅ netkeiba データ取得 完了済み',
+                  'title': '✅ netkeiba CSV 全件取得済み',
                   'description': '全23ヶ月分のデータ取得が完了しています。',
                   'color': 0x2ECC71,
               }]
@@ -132,18 +112,14 @@ jobs:
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
 
-      # -------------------------------------------------------
-      # データ取得
-      # -------------------------------------------------------
       - name: データ取得
         if: steps.check_months.outputs.remaining_count != '0'
         id: fetch_data
         run: |
           python3 - << 'PYEOF'
-          import json, os, sys, subprocess
+          import json, os, subprocess
 
-          remaining_raw = os.environ.get('REMAINING', '[]')
-          remaining = json.loads(remaining_raw)
+          remaining = json.loads(os.environ.get('REMAINING', '[]'))
           print(f'取得対象: {remaining}')
 
           failed = []
@@ -155,7 +131,6 @@ jobs:
               try:
                   subprocess.run(
                       ['python', 'fetch_history.py', '--year', year, '--month', str(int(month))],
-                      env={**os.environ, 'PYTHONPATH': '.'},
                       timeout=1800,
                       check=True
                   )
@@ -171,62 +146,48 @@ jobs:
           with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
               f.write(f'succeeded={json.dumps(succeeded)}\n')
               f.write(f'failed={json.dumps(failed)}\n')
-              f.write(f'succeeded_count={len(succeeded)}\n')
-              f.write(f'failed_count={len(failed)}\n')
           PYEOF
         env:
-          PYTHONPATH: .
           REMAINING: ${{ steps.check_months.outputs.remaining }}
 
-      # -------------------------------------------------------
-      # 取得結果サマリ
-      # -------------------------------------------------------
       - name: 取得結果サマリ
         if: steps.check_months.outputs.remaining_count != '0'
         run: |
-          echo "=== 取得済みファイル一覧 ==="
-          ls -lh data/netkeiba_*.json 2>/dev/null || echo "ファイルなし"
+          echo "=== 取得済みCSVファイル ==="
+          ls -lh data/raceresults_*.csv 2>/dev/null || echo "ファイルなし"
           echo ""
           echo "=== 件数 ==="
           python3 - << 'PYEOF'
-          import json, glob
+          import glob, os
 
-          files = sorted(glob.glob('data/netkeiba_*.json'))
-          total = 0
+          files = sorted(glob.glob('data/raceresults_*.csv'))
+          total_size = 0
           for f in files:
-              try:
-                  n = len(json.load(open(f)))
-                  total += n
-                  print(f'{f}: {n}件')
-              except Exception as e:
-                  print(f'{f}: エラー ({e})')
-          print(f'\n合計: {total}件')
+              size = os.path.getsize(f)
+              total_size += size
+              with open(f, encoding='utf-8-sig') as fp:
+                  lines = sum(1 for _ in fp) - 1  # ヘッダー除く
+              print(f'{os.path.basename(f)}: {lines}行 ({size//1024}KB)')
+          print(f'\n合計: {total_size//1024}KB')
           PYEOF
 
-      # -------------------------------------------------------
-      # commit & push
-      # -------------------------------------------------------
       - name: コミット & プッシュ
         if: steps.check_months.outputs.remaining_count != '0'
         id: commit
         run: |
           git config user.email "actions@github.com"
           git config user.name "GitHub Actions [bot]"
-          git add data/netkeiba_*.json
+          git add data/raceresults_*.csv
 
           if git diff --staged --quiet; then
-            echo "変更なし。コミットをスキップ。"
+            echo "変更なし。スキップ。"
             echo "committed=false" >> $GITHUB_OUTPUT
           else
-            git commit -m "data: fetch netkeiba [skip ci]"
+            git commit -m "data: fetch netkeiba csv [skip ci]"
             git push origin main
             echo "committed=true" >> $GITHUB_OUTPUT
-            echo "コミット完了"
           fi
 
-      # -------------------------------------------------------
-      # Discord: 完了通知
-      # -------------------------------------------------------
       - name: Discord 完了通知
         if: steps.check_months.outputs.remaining_count != '0' && always()
         run: |
@@ -237,28 +198,14 @@ jobs:
           if not webhook:
               exit(0)
 
-          succeeded_raw = os.environ.get('SUCCEEDED', '[]')
-          failed_raw    = os.environ.get('FAILED', '[]')
-          remaining_raw = os.environ.get('REMAINING', '[]')
-
-          succeeded   = json.loads(succeeded_raw)
-          failed      = json.loads(failed_raw)
-          remaining   = json.loads(remaining_raw)
+          succeeded = json.loads(os.environ.get('SUCCEEDED', '[]'))
+          failed    = json.loads(os.environ.get('FAILED', '[]'))
           done_count  = int(os.environ.get('DONE_COUNT', '0'))
           total_count = int(os.environ.get('TOTAL_COUNT', '0'))
-
           new_done = done_count + len(succeeded)
-          all_done = (new_done >= total_count)
 
-          if failed:
-              color = 0xE67E22
-              title = '⚠️ netkeiba データ取得 完了（一部エラー）'
-          elif all_done:
-              color = 0x2ECC71
-              title = '🎉 netkeiba データ取得 全件完了！'
-          else:
-              color = 0x3498DB
-              title = '✅ netkeiba データ取得 完了（継続中）'
+          color = 0xE67E22 if failed else (0x2ECC71 if new_done >= total_count else 0x3498DB)
+          title = '⚠️ 完了（一部エラー）' if failed else ('🎉 全件完了！' if new_done >= total_count else '✅ 完了（継続中）')
 
           lines = [
               f'**今回取得成功**: {len(succeeded)}ヶ月',
@@ -267,35 +214,18 @@ jobs:
           if succeeded:
               lines.append(f'✅ 成功: {", ".join(succeeded)}')
           if failed:
-              lines.append(f'❌ 失敗: {", ".join(failed)}（次回自動リトライ）')
-          if not all_done:
-              remaining_next = [ym for ym in remaining if ym not in succeeded]
-              preview = ", ".join(remaining_next[:5])
-              if len(remaining_next) > 5:
-                  preview += '...'
-              lines.append(f'📅 次回取得予定: {preview}')
+              lines.append(f'❌ 失敗: {", ".join(failed)}')
 
-          payload = {
-              'embeds': [{
-                  'title': title,
-                  'description': '\n'.join(lines),
-                  'color': color,
-              }]
-          }
-          resp = requests.post(webhook, json=payload, timeout=10)
-          print(f'Discord完了通知: {resp.status_code}')
+          payload = {'embeds': [{'title': f'🏇 netkeiba CSV {title}', 'description': "\n".join(lines), 'color': color}]}
+          requests.post(webhook, json=payload, timeout=10)
           PYEOF
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
           SUCCEEDED: ${{ steps.fetch_data.outputs.succeeded }}
           FAILED: ${{ steps.fetch_data.outputs.failed }}
-          REMAINING: ${{ steps.check_months.outputs.remaining }}
           DONE_COUNT: ${{ steps.check_months.outputs.done_count }}
           TOTAL_COUNT: ${{ steps.check_months.outputs.total_count }}
 
-      # -------------------------------------------------------
-      # Discord: エラー通知（ジョブ失敗時）
-      # -------------------------------------------------------
       - name: Discord エラー通知
         if: failure()
         run: |
@@ -307,15 +237,8 @@ jobs:
               exit(0)
 
           run_url = f'https://github.com/{os.environ.get("GITHUB_REPOSITORY","")}/actions/runs/{os.environ.get("GITHUB_RUN_ID","")}'
-          payload = {
-              'embeds': [{
-                  'title': '🚨 netkeiba 取得ワークフロー エラー',
-                  'description': f'ワークフローが異常終了しました。\n[ログを確認する]({run_url})',
-                  'color': 0xE74C3C,
-              }]
-          }
-          resp = requests.post(webhook, json=payload, timeout=10)
-          print(f'Discordエラー通知: {resp.status_code}')
+          payload = {'embeds': [{'title': '🚨 netkeiba ワークフロー エラー', 'description': f'[ログを確認する]({run_url})', 'color': 0xE74C3C}]}
+          requests.post(webhook, json=payload, timeout=10)
           PYEOF
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}

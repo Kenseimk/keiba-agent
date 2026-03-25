@@ -1,8 +1,21 @@
 """
-fetch_history.py - netkeiba スクレイパー（db.netkeiba.com 完全版 v5）
+fetch_history.py - netkeiba スクレイパー CSV出力版
+
+race_list_sub.html から race_id を正確に生成し、
+db.netkeiba.com/race/{race_id}/ から結果を取得して
+CSVファイルとして保存する。
+
+CSVフォーマット:
+  race_id, 着順, 枠番, 馬番, 馬名, 性齢, 斤量, 騎手,
+  タイム, 着差, 通過順, 上がり3F, 単勝オッズ, 人気, 馬体重,
+  年, 場コード, 回次, 日次, レース番号
+
+使い方:
+  python fetch_history.py --year 2024 --month 1
+  python fetch_history.py --year 2024 --month 1 --no-skip
 """
 
-import os, re, json, time, random, argparse, requests, calendar
+import os, re, csv, json, time, random, argparse, requests, calendar
 from bs4 import BeautifulSoup
 
 VENUE_CODE = {
@@ -10,7 +23,6 @@ VENUE_CODE = {
     '東京':'05','中山':'06','中京':'07','京都':'08',
     '阪神':'09','小倉':'10',
 }
-JRA_VENUE_CODES = set(VENUE_CODE.values())
 
 DATA_DIR        = 'data'
 SLEEP_MIN       = 2.0
@@ -20,6 +32,13 @@ SLEEP_LONG_MAX  = 18.0
 BURST_INTERVAL  = 15
 MAX_RETRIES     = 3
 SESSION_RESET_INTERVAL = 50
+
+CSV_COLUMNS = [
+    'race_id','着順','枠番','馬番','馬名','性齢','斤量','騎手',
+    'タイム','着差','通過順','上がり3F','単勝オッズ','人気','馬体重',
+    '年','場コード','回次','日次','レース番号',
+    '単勝払戻','複勝払戻','馬連払戻','馬単払戻','ワイド払戻','三連複払戻','三連単払戻'
+]
 
 BASE_HEADERS = {
     'User-Agent': (
@@ -45,9 +64,9 @@ def _get_session():
         s = requests.Session()
         s.headers.update(BASE_HEADERS)
         try:
-            s.get('https://db.netkeiba.com/', timeout=10)
+            s.get('https://race.netkeiba.com/', timeout=10)
             time.sleep(random.uniform(1.5, 2.5))
-            s.headers.update({'Referer': 'https://db.netkeiba.com/'})
+            s.headers.update({'Referer': 'https://race.netkeiba.com/'})
         except Exception as e:
             print(f'[session] init失敗（続行）: {e}')
         _session = s
@@ -86,39 +105,69 @@ def get_kaisai_dates(year: int, month: int) -> list:
     return dates
 
 # ============================================================
-# ステップ2: db.netkeiba.com/race/list/ から race_id を取得
+# ステップ2: race_list_sub.html から race_id を正確に生成
 # ============================================================
 def get_race_ids_for_date(date_str: str) -> list:
-    url     = f'https://db.netkeiba.com/race/list/{date_str}/'
+    url     = f'https://race.netkeiba.com/top/race_list_sub.html?kaisai_date={date_str}'
     session = _get_session()
     race_ids = []
+
     try:
         resp = session.get(url, timeout=15)
-        if resp.status_code == 404:
-            return []
-        resp.raise_for_status()
-        resp.encoding = 'EUC-JP'
+        resp.encoding = 'UTF-8'
         soup = BeautifulSoup(resp.text, 'html.parser')
         session.headers.update({'Referer': url})
         _sleep()
-        for a in soup.select('a[href*="/race/"]'):
-            m = re.search(r'/race/(\d{12})/?', a.get('href', ''))
-            if m:
-                race_id    = m.group(1)
-                venue_code = race_id[4:6]
-                # JRA場コードのみ（01〜10）
-                if venue_code in JRA_VENUE_CODES:
-                    race_ids.append(race_id)
+
+        year      = date_str[:4]
+        full_text = soup.get_text()
+
+        # 「N回 場所 N日目」でブロック分割
+        blocks = re.split(r'(?=\d+回\s*\S+\s*\d+日目)', full_text)
+
+        total_kaisai = 0
+        for block in blocks:
+            if not block.strip():
+                continue
+            header = re.match(r'(\d+)回\s*(\S+)\s*(\d+)日目', block.strip())
+            if not header:
+                continue
+
+            kai_str   = header.group(1)
+            venue_str = header.group(2)
+            nichi_str = header.group(3)
+
+            venue_code = next((c for v, c in VENUE_CODE.items() if v in venue_str), None)
+            if not venue_code:
+                continue  # 地方競馬はスキップ
+
+            kai   = kai_str.zfill(2)
+            nichi = nichi_str.zfill(2)
+
+            race_nums = re.findall(r'(\d+)R', block)
+            max_race  = max(int(r) for r in race_nums) if race_nums else 12
+
+            for race_n in range(1, max_race + 1):
+                race_ids.append(f'{year}{venue_code}{kai}{nichi}{str(race_n).zfill(2)}')
+
+            total_kaisai += 1
+
         race_ids = sorted(set(race_ids))
-        print(f'  [{date_str}] {len(race_ids)}レース取得')
+        print(f'  [{date_str}] {total_kaisai}開催 / {len(race_ids)}race_id生成')
+
     except Exception as e:
         print(f'  [{date_str}] 取得失敗: {e}')
+
     return race_ids
 
 # ============================================================
-# ステップ3: db.netkeiba.com/race/{race_id}/ からレース結果を取得
+# ステップ3: db.netkeiba.com からレース結果をCSV行として取得
 # ============================================================
-def fetch_race_result(race_id: str):
+def fetch_race_rows(race_id: str) -> list:
+    """
+    レース結果を辞書のリスト（1馬=1行）として返す。
+    新馬戦・存在しないrace_idはNoneを返す。
+    """
     global _session_count
     url     = f'https://db.netkeiba.com/race/{race_id}/'
     session = _get_session()
@@ -156,11 +205,62 @@ def fetch_race_result(race_id: str):
                 return None
 
             session.headers.update({'Referer': url})
-            horses  = _parse_horses(soup)
-            payouts = _parse_payouts(soup)
-            if not horses: return None
 
-            return {'race_id': race_id, 'horses': horses, 'payouts': payouts}
+            # 払戻情報を取得
+            payouts = _parse_payouts(soup)
+
+            # race_id の内訳
+            year     = race_id[:4]
+            venue_c  = race_id[4:6]
+            kai      = race_id[6:8]
+            nichi    = race_id[8:10]
+            race_n   = race_id[10:12]
+
+            rows = []
+            for row in table.select('tr')[1:]:
+                cols = row.select('td')
+                if len(cols) < 16: continue
+                try:
+                    finish_rank = int(cols[0].text.strip())
+                except ValueError:
+                    continue  # 中止・除外などはスキップ
+
+                def get(i, default=''):
+                    try: return cols[i].text.strip()
+                    except: return default
+
+                rows.append({
+                    'race_id':    race_id,
+                    '着順':       finish_rank,
+                    '枠番':       get(1),
+                    '馬番':       get(2),
+                    '馬名':       get(3),
+                    '性齢':       get(4),
+                    '斤量':       get(5),
+                    '騎手':       get(6),
+                    'タイム':     get(7),
+                    '着差':       get(8),
+                    '通過順':     get(14),
+                    '上がり3F':   get(15),
+                    '単勝オッズ': get(16),
+                    '人気':       get(17),
+                    '馬体重':     get(18),
+                    '年':         year,
+                    '場コード':   venue_c,
+                    '回次':       kai,
+                    '日次':       nichi,
+                    'レース番号': race_n,
+                    # 払戻（全馬共通・1着の場合の払戻を記録）
+                    '単勝払戻':   _payout_str(payouts, '単勝'),
+                    '複勝払戻':   _payout_str(payouts, '複勝'),
+                    '馬連払戻':   _payout_str(payouts, '馬連'),
+                    '馬単払戻':   _payout_str(payouts, '馬単'),
+                    'ワイド払戻': _payout_str(payouts, 'ワイド'),
+                    '三連複払戻': _payout_str(payouts, '三連複'),
+                    '三連単払戻': _payout_str(payouts, '三連単'),
+                })
+
+            return rows if rows else None
 
         except requests.exceptions.Timeout:
             print(f'[scraper] タイムアウト ({attempt+1}/{MAX_RETRIES})')
@@ -171,114 +271,67 @@ def fetch_race_result(race_id: str):
     return None
 
 
-def _parse_horses(soup):
-    """
-    db.netkeiba.com の race_table_01 をパース
-    [0]=着順 [3]=馬名 [14]=通過順 [15]=上がり
-    """
-    horses = []
-    table  = soup.select_one('.race_table_01')
-    if not table: return horses
-
-    for row in table.select('tr')[1:]:
-        cols = row.select('td')
-        if len(cols) < 16: continue
-        try:
-            finish_rank = int(cols[0].text.strip())
-        except ValueError:
-            continue
-
-        name  = cols[3].text.strip()
-        agari = None
-        try:
-            agari = float(cols[15].text.strip())
-        except (ValueError, IndexError):
-            pass
-
-        corner_text   = cols[14].text.strip() if len(cols) > 14 else ''
-        corner_orders = [int(c) for c in re.split(r'[-\s]', corner_text) if c.isdigit()]
-
-        horses.append({
-            'name':          name,
-            'finish_rank':   finish_rank,
-            'agari_3f':      agari,
-            'corner_orders': corner_orders,
-            'last_corner':   corner_orders[-1] if corner_orders else None,
-        })
-    return horses
+def _payout_str(payouts: dict, ptype: str) -> str:
+    """払戻を '馬番:金額|馬番:金額' 形式で返す"""
+    entries = payouts.get(ptype, [])
+    if not entries: return ''
+    return '|'.join(f'{e["horses"]}:{e["payout"]}' for e in entries)
 
 
-def _parse_payouts(soup):
-    """
-    db.netkeiba.com の pay_table_01 をパース
-
-    払戻テーブルのセル構造:
-      td[0] = 馬券種（単勝/複勝/...）
-      td[1] = 馬番（複数頭は <br> 区切り）
-      td[2] = 払戻金額（複数は <br> 区切り）
-      td[3] = 人気
-
-    複勝などは1つのセルに複数の値が <br> で区切られている。
-    """
+def _parse_payouts(soup) -> dict:
     payouts      = {}
-    payout_types = ('単勝','複勝','枠連','馬連','ワイド','馬単','3連複','3連単','三連複','三連単')
-
+    payout_types = ('単勝','複勝','枠連','馬連','ワイド','馬単','三連複','三連単','3連複','3連単')
     for table in soup.select('.pay_table_01'):
         current_type = None
         for row in table.select('tr'):
             cols = row.select('td, th')
             if not cols: continue
-
             type_text = cols[0].get_text(strip=True)
             if type_text in payout_types:
-                current_type = type_text
+                canonical = type_text.replace('3連複','三連複').replace('3連単','三連単')
+                current_type = canonical
                 if current_type not in payouts:
                     payouts[current_type] = []
-
             if not current_type or len(cols) < 3:
                 continue
-
-            # <br> で区切られた複数値を個別に取得
             horses_list  = [s.strip() for s in cols[1].get_text(separator='\n').split('\n') if s.strip()]
             payouts_list = [s.strip() for s in cols[2].get_text(separator='\n').split('\n') if s.strip()]
-
             for h_str, p_str in zip(horses_list, payouts_list):
                 p_num = re.sub(r'[^\d]', '', p_str)
                 if h_str and p_num:
                     try:
-                        payouts[current_type].append({
-                            'horses': h_str,
-                            'payout': int(p_num),
-                        })
+                        payouts[current_type].append({'horses': h_str, 'payout': int(p_num)})
                     except ValueError:
                         pass
-
     return payouts
-
 
 # ============================================================
 # 月単位取得メイン
 # ============================================================
 def fetch_month(year: int, month: int, skip_existing: bool = True):
-    output_path = os.path.join(DATA_DIR, f'netkeiba_{year}{str(month).zfill(2)}.json')
+    ym          = f'{year}{str(month).zfill(2)}'
+    output_path = os.path.join(DATA_DIR, f'raceresults_{ym}.csv')
     os.makedirs(DATA_DIR, exist_ok=True)
 
-    existing = {}
+    # 取得済みrace_idを確認
+    existing_ids = set()
     if skip_existing and os.path.exists(output_path):
         try:
-            with open(output_path) as f:
-                d = json.load(f)
-            if d:
-                existing = d
-                print(f'[fetch_month] 取得済み: {len(existing)}件')
+            with open(output_path, encoding='utf-8-sig', newline='') as f:
+                reader = csv.DictReader(f)
+                for row in reader:
+                    existing_ids.add(row.get('race_id',''))
+            print(f'[fetch_month] 取得済み: {len(existing_ids)}件')
         except Exception:
             pass
 
+    # ステップ1: 開催日リスト
     kaisai_dates = get_kaisai_dates(year, month)
     if not kaisai_dates:
         print(f'[fetch_month] {year}年{month}月: 開催日なし')
-        return {}
+        return
 
+    # ステップ2: race_idリスト
     all_race_ids = []
     for kd in kaisai_dates:
         ids = get_race_ids_for_date(kd)
@@ -286,49 +339,50 @@ def fetch_month(year: int, month: int, skip_existing: bool = True):
         _sleep()
 
     all_race_ids = sorted(set(all_race_ids))
-    print(f'[fetch_month] {year}年{month}月: 合計{len(all_race_ids)}レース')
+    print(f'[fetch_month] {year}年{month}月: 合計{len(all_race_ids)}race_id候補')
 
     if not all_race_ids:
-        print(f'[fetch_month] race_idが0件 → スキップ')
-        return existing
+        print('[fetch_month] race_idが0件 → スキップ')
+        return
 
-    new_data = dict(existing)
-    success = skip = error = 0
+    # ステップ3: CSVに追記
+    write_header = not os.path.exists(output_path) or len(existing_ids) == 0
+    success = skip = not_found = error = 0
 
-    for i, race_id in enumerate(all_race_ids, 1):
-        if skip_existing and race_id in existing:
-            skip += 1
-            continue
+    with open(output_path, 'a', encoding='utf-8-sig', newline='') as f:
+        writer = csv.DictWriter(f, fieldnames=CSV_COLUMNS)
+        if write_header:
+            writer.writeheader()
 
-        if i > 1 and (i - 1) % BURST_INTERVAL == 0:
-            t = random.uniform(SLEEP_LONG_MIN, SLEEP_LONG_MAX)
-            print(f'[fetch_month] {BURST_INTERVAL}件完了 → {t:.1f}秒休憩')
-            time.sleep(t)
+        for i, race_id in enumerate(all_race_ids, 1):
+            if skip_existing and race_id in existing_ids:
+                skip += 1
+                continue
 
-        try:
-            result = fetch_race_result(race_id)
-            if result:
-                new_data[race_id] = result
-                success += 1
-                if success <= 3 or success % 30 == 0:
-                    print(f'  [{i}/{len(all_race_ids)}] {race_id} ✓ ({len(result["horses"])}頭) 上がり:{result["horses"][0].get("agari_3f")}')
-        except Exception as e:
-            print(f'  [{i}/{len(all_race_ids)}] {race_id} エラー: {e}')
-            error += 1
-            time.sleep(random.uniform(5, 10))
+            if i > 1 and (i - 1) % BURST_INTERVAL == 0:
+                t = random.uniform(SLEEP_LONG_MIN, SLEEP_LONG_MAX)
+                print(f'[fetch_month] {BURST_INTERVAL}件完了 → {t:.1f}秒休憩')
+                time.sleep(t)
 
-        _sleep()
+            try:
+                rows = fetch_race_rows(race_id)
+                if rows:
+                    writer.writerows(rows)
+                    f.flush()
+                    success += 1
+                    if success <= 3 or success % 30 == 0:
+                        print(f'  [{i}/{len(all_race_ids)}] {race_id} ✓ ({len(rows)}頭)')
+                else:
+                    not_found += 1
+            except Exception as e:
+                print(f'  [{i}/{len(all_race_ids)}] {race_id} エラー: {e}')
+                error += 1
+                time.sleep(random.uniform(5, 10))
 
-        if success > 0 and success % 10 == 0:
-            with open(output_path, 'w', encoding='utf-8') as f:
-                json.dump(new_data, f, ensure_ascii=False, indent=2)
+            _sleep()
 
-    with open(output_path, 'w', encoding='utf-8') as f:
-        json.dump(new_data, f, ensure_ascii=False, indent=2)
-
-    print(f'[fetch_month] 完了: 取得={success}, スキップ={skip}, エラー={error}')
-    print(f'[fetch_month] 保存: {output_path} ({len(new_data)}件)')
-    return new_data
+    print(f'[fetch_month] 完了: 取得={success}, スキップ={skip}, 存在なし={not_found}, エラー={error}')
+    print(f'[fetch_month] 保存: {output_path}')
 
 
 if __name__ == '__main__':
