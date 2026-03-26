@@ -14,6 +14,9 @@ jobs:
   fetch:
     runs-on: ubuntu-latest
     timeout-minutes: 360
+    permissions:
+      contents: write
+      actions: write  # 次のワークフローをトリガーするために必要
 
     steps:
       - name: チェックアウト
@@ -59,12 +62,14 @@ jobs:
 
           print(f'取得済み: {len(done)}/{len(TARGET_MONTHS)}ヶ月')
           print(f'今回取得: {batch}')
+          print(f'残り: {len(remaining) - len(batch)}ヶ月')
 
           with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
               f.write(f'batch={json.dumps(batch)}\n')
               f.write(f'batch_count={len(batch)}\n')
               f.write(f'done_count={len(done)}\n')
               f.write(f'total_count={len(TARGET_MONTHS)}\n')
+              f.write(f'remaining_after={len(remaining) - len(batch)}\n')
           PYEOF
         env:
           MONTHS_PER_RUN: ${{ github.event.inputs.months_per_run || '3' }}
@@ -97,8 +102,8 @@ jobs:
           import requests, os
           webhook = os.environ.get('DISCORD_WEBHOOK_URL', '')
           if not webhook: exit(0)
-          payload = {'embeds': [{'title': '✅ netkeiba CSV 全件取得済み',
-              'description': '全23ヶ月分のCSVデータが揃っています。', 'color': 0x2ECC71}]}
+          payload = {'embeds': [{'title': '🎉 netkeiba CSV 全件取得完了！',
+              'description': '全23ヶ月分のCSVデータが揃いました。', 'color': 0x2ECC71}]}
           requests.post(webhook, json=payload, timeout=10)
           PYEOF
         env:
@@ -117,58 +122,41 @@ jobs:
           batch = json.loads(os.environ.get('BATCH', '[]'))
           print(f'今回取得: {batch}')
 
-          failed    = []
+          failed = []
           succeeded = []
 
           for ym in batch:
               year, month = ym.split('-')
-              ym_key    = ym.replace('-', '')
-              csv_path  = f'data/raceresults_{ym_key}.csv'
+              ym_key   = ym.replace('-', '')
+              csv_path = f'data/raceresults_{ym_key}.csv'
 
               print(f'\n===== {year}年{int(month)}月 開始 =====')
 
-              # --- 取得 ---
               try:
                   subprocess.run(
                       ['python', 'fetch_history.py',
                        '--year', year, '--month', str(int(month))],
-                      timeout=1800,
-                      check=True
+                      timeout=1800, check=True
                   )
               except Exception as e:
                   print(f'[ERROR] 取得失敗 {ym}: {e}')
                   failed.append(ym)
-                  continue  # 失敗しても次の月へ
+                  continue
 
-              # --- 即コミット&プッシュ ---
               try:
                   subprocess.run(['git', 'add', csv_path], check=True)
-
-                  diff = subprocess.run(
-                      ['git', 'diff', '--staged', '--quiet'],
-                      capture_output=True
-                  )
-
+                  diff = subprocess.run(['git', 'diff', '--staged', '--quiet'], capture_output=True)
                   if diff.returncode != 0:
-                      subprocess.run(
-                          ['git', 'commit', '-m',
-                           f'data: fetch netkeiba {ym} [skip ci]'],
-                          check=True
-                      )
-                      subprocess.run(
-                          ['git', 'push', 'origin', 'main'],
-                          check=True
-                      )
+                      subprocess.run(['git', 'commit', '-m', f'data: fetch netkeiba {ym} [skip ci]'], check=True)
+                      subprocess.run(['git', 'push', 'origin', 'main'], check=True)
                       print(f'✅ {ym} コミット&プッシュ完了')
                   else:
                       print(f'⚠️  {ym} 変更なし（スキップ）')
-
                   succeeded.append(ym)
-
               except Exception as e:
                   print(f'[ERROR] コミット失敗 {ym}: {e}')
                   failed.append(ym)
-                  continue  # コミット失敗でも次の月へ
+                  continue
 
               print(f'===== {year}年{int(month)}月 完了 =====')
 
@@ -185,8 +173,6 @@ jobs:
       - name: 取得結果サマリ
         if: steps.check_months.outputs.batch_count != '0'
         run: |
-          echo "=== 取得済みCSVファイル ==="
-          ls -lh data/raceresults_*.csv 2>/dev/null || echo "ファイルなし"
           python3 - << 'PYEOF'
           import glob, os
           files = sorted(glob.glob('data/raceresults_*.csv'))
@@ -200,6 +186,21 @@ jobs:
           print(f'\n合計: {total}行')
           PYEOF
 
+      # -------------------------------------------------------
+      # 残りがあれば即座に次のワークフローをトリガー
+      # -------------------------------------------------------
+      - name: 次のワークフローをトリガー
+        if: steps.check_months.outputs.batch_count != '0' && steps.check_months.outputs.remaining_after != '0'
+        run: |
+          echo "残り ${{ steps.check_months.outputs.remaining_after }}ヶ月 → 次のワークフローを起動します"
+          curl -X POST \
+            -H "Accept: application/vnd.github.v3+json" \
+            -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+            -H "Content-Type: application/json" \
+            https://api.github.com/repos/${{ github.repository }}/actions/workflows/fetch_netkeiba_auto.yml/dispatches \
+            -d '{"ref":"main","inputs":{"months_per_run":"3"}}'
+          echo "✅ 次のワークフローをトリガーしました"
+
       - name: Discord 完了通知
         if: steps.check_months.outputs.batch_count != '0' && always()
         run: |
@@ -212,6 +213,7 @@ jobs:
           failed      = json.loads(os.environ.get('FAILED', '[]'))
           done_count  = int(os.environ.get('DONE_COUNT', '0'))
           total_count = int(os.environ.get('TOTAL_COUNT', '0'))
+          remaining_after = int(os.environ.get('REMAINING_AFTER', '0'))
           new_done    = done_count + len(succeeded)
           all_done    = new_done >= total_count
 
@@ -222,7 +224,8 @@ jobs:
           lines = [f'**進捗**: {new_done}/{total_count}ヶ月']
           if succeeded: lines.append(f'✅ 成功: {", ".join(succeeded)}')
           if failed:    lines.append(f'❌ 失敗: {", ".join(failed)}（次回リトライ）')
-          if not all_done: lines.append(f'📅 残り{total_count - new_done}ヶ月 → 明日続行')
+          if not all_done and remaining_after > 0:
+              lines.append(f'🔄 残り{remaining_after}ヶ月 → 次のワークフローを自動起動中...')
 
           payload = {'embeds': [{'title': f'🏇 netkeiba CSV {title}',
                                  'description': "\n".join(lines), 'color': color}]}
@@ -234,6 +237,7 @@ jobs:
           FAILED: ${{ steps.fetch_data.outputs.failed }}
           DONE_COUNT: ${{ steps.check_months.outputs.done_count }}
           TOTAL_COUNT: ${{ steps.check_months.outputs.total_count }}
+          REMAINING_AFTER: ${{ steps.check_months.outputs.remaining_after }}
 
       - name: Discord エラー通知
         if: failure()
@@ -245,8 +249,7 @@ jobs:
           run_url = (f'https://github.com/{os.environ.get("GITHUB_REPOSITORY","")}'
                      f'/actions/runs/{os.environ.get("GITHUB_RUN_ID","")}')
           payload = {'embeds': [{'title': '🚨 netkeiba ワークフロー エラー',
-                                 'description': f'[ログを確認する]({run_url})',
-                                 'color': 0xE74C3C}]}
+                                 'description': f'[ログを確認する]({run_url})', 'color': 0xE74C3C}]}
           requests.post(webhook, json=payload, timeout=10)
           PYEOF
         env:
