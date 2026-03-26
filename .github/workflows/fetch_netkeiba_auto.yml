@@ -4,6 +4,11 @@ on:
   schedule:
     - cron: '0 18 * * *'  # 毎日 深夜3時（JST）
   workflow_dispatch:
+    inputs:
+      months_per_run:
+        description: '1回で取得する月数（デフォルト3）'
+        default: '3'
+        required: false
 
 jobs:
   fetch:
@@ -25,6 +30,11 @@ jobs:
       - name: data/ ディレクトリを準備
         run: mkdir -p data
 
+      - name: git設定
+        run: |
+          git config user.email "actions@github.com"
+          git config user.name "GitHub Actions [bot]"
+
       - name: 未取得月リストを生成
         id: check_months
         run: |
@@ -44,101 +54,123 @@ jobs:
                   done.add(ym)
 
           remaining = [ym for ym in TARGET_MONTHS if ym not in done]
+          months_per_run = int(os.environ.get('MONTHS_PER_RUN', '3'))
+          batch = remaining[:months_per_run]
 
-          print(f'対象: {len(TARGET_MONTHS)}ヶ月')
-          print(f'取得済み: {len(done)}ヶ月')
-          print(f'未取得: {len(remaining)}ヶ月')
+          print(f'取得済み: {len(done)}/{len(TARGET_MONTHS)}ヶ月')
+          print(f'今回取得: {batch}')
 
           with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
-              f.write(f'remaining={json.dumps(remaining)}\n')
-              f.write(f'remaining_count={len(remaining)}\n')
+              f.write(f'batch={json.dumps(batch)}\n')
+              f.write(f'batch_count={len(batch)}\n')
               f.write(f'done_count={len(done)}\n')
               f.write(f'total_count={len(TARGET_MONTHS)}\n')
           PYEOF
+        env:
+          MONTHS_PER_RUN: ${{ github.event.inputs.months_per_run || '3' }}
 
       - name: Discord 開始通知
-        if: steps.check_months.outputs.remaining_count != '0'
+        if: steps.check_months.outputs.batch_count != '0'
         run: |
           python3 - << 'PYEOF'
           import requests, json, os
-
           webhook = os.environ.get('DISCORD_WEBHOOK_URL', '')
-          if not webhook:
-              exit(0)
-
-          remaining = json.loads(os.environ.get('REMAINING', '[]'))
+          if not webhook: exit(0)
+          batch = json.loads(os.environ.get('BATCH', '[]'))
           done_count = int(os.environ.get('DONE_COUNT', '0'))
           total_count = int(os.environ.get('TOTAL_COUNT', '0'))
-
-          payload = {
-              'embeds': [{
-                  'title': '🏇 netkeiba CSV取得 開始',
-                  'description': (
-                      f'**取得済み**: {done_count}/{total_count}ヶ月\n'
-                      f'**今回の取得対象**: {len(remaining)}ヶ月\n'
-                      f'```{" ".join(remaining)}```'
-                  ),
-                  'color': 0x3498DB,
-              }]
-          }
-          resp = requests.post(webhook, json=payload, timeout=10)
-          print(f'Discord通知: {resp.status_code}')
+          payload = {'embeds': [{'title': '🏇 netkeiba CSV取得 開始',
+              'description': f'**進捗**: {done_count}/{total_count}ヶ月\n**今回取得**: {", ".join(batch)}',
+              'color': 0x3498DB}]}
+          requests.post(webhook, json=payload, timeout=10)
           PYEOF
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
-          REMAINING: ${{ steps.check_months.outputs.remaining }}
+          BATCH: ${{ steps.check_months.outputs.batch }}
           DONE_COUNT: ${{ steps.check_months.outputs.done_count }}
           TOTAL_COUNT: ${{ steps.check_months.outputs.total_count }}
 
       - name: 全取得済みの場合の通知
-        if: steps.check_months.outputs.remaining_count == '0'
+        if: steps.check_months.outputs.batch_count == '0'
         run: |
           python3 - << 'PYEOF'
           import requests, os
-
           webhook = os.environ.get('DISCORD_WEBHOOK_URL', '')
-          if not webhook:
-              exit(0)
-
-          payload = {
-              'embeds': [{
-                  'title': '✅ netkeiba CSV 全件取得済み',
-                  'description': '全23ヶ月分のデータ取得が完了しています。',
-                  'color': 0x2ECC71,
-              }]
-          }
+          if not webhook: exit(0)
+          payload = {'embeds': [{'title': '✅ netkeiba CSV 全件取得済み',
+              'description': '全23ヶ月分のCSVデータが揃っています。', 'color': 0x2ECC71}]}
           requests.post(webhook, json=payload, timeout=10)
           PYEOF
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
 
-      - name: データ取得
-        if: steps.check_months.outputs.remaining_count != '0'
+      # -------------------------------------------------------
+      # 1ヶ月ずつ取得 → 即コミット → 次の月へ継続
+      # -------------------------------------------------------
+      - name: データ取得（1ヶ月ごとにコミット&継続）
+        if: steps.check_months.outputs.batch_count != '0'
         id: fetch_data
         run: |
           python3 - << 'PYEOF'
           import json, os, subprocess
 
-          remaining = json.loads(os.environ.get('REMAINING', '[]'))
-          print(f'取得対象: {remaining}')
+          batch = json.loads(os.environ.get('BATCH', '[]'))
+          print(f'今回取得: {batch}')
 
-          failed = []
+          failed    = []
           succeeded = []
 
-          for ym in remaining:
+          for ym in batch:
               year, month = ym.split('-')
+              ym_key    = ym.replace('-', '')
+              csv_path  = f'data/raceresults_{ym_key}.csv'
+
               print(f'\n===== {year}年{int(month)}月 開始 =====')
+
+              # --- 取得 ---
               try:
                   subprocess.run(
-                      ['python', 'fetch_history.py', '--year', year, '--month', str(int(month))],
+                      ['python', 'fetch_history.py',
+                       '--year', year, '--month', str(int(month))],
                       timeout=1800,
                       check=True
                   )
-                  succeeded.append(ym)
-                  print(f'===== {year}年{int(month)}月 完了 =====')
               except Exception as e:
-                  print(f'[ERROR] {ym}: {e}')
+                  print(f'[ERROR] 取得失敗 {ym}: {e}')
                   failed.append(ym)
+                  continue  # 失敗しても次の月へ
+
+              # --- 即コミット&プッシュ ---
+              try:
+                  subprocess.run(['git', 'add', csv_path], check=True)
+
+                  diff = subprocess.run(
+                      ['git', 'diff', '--staged', '--quiet'],
+                      capture_output=True
+                  )
+
+                  if diff.returncode != 0:
+                      subprocess.run(
+                          ['git', 'commit', '-m',
+                           f'data: fetch netkeiba {ym} [skip ci]'],
+                          check=True
+                      )
+                      subprocess.run(
+                          ['git', 'push', 'origin', 'main'],
+                          check=True
+                      )
+                      print(f'✅ {ym} コミット&プッシュ完了')
+                  else:
+                      print(f'⚠️  {ym} 変更なし（スキップ）')
+
+                  succeeded.append(ym)
+
+              except Exception as e:
+                  print(f'[ERROR] コミット失敗 {ym}: {e}')
+                  failed.append(ym)
+                  continue  # コミット失敗でも次の月へ
+
+              print(f'===== {year}年{int(month)}月 完了 =====')
 
           print(f'\n成功: {succeeded}')
           print(f'失敗: {failed}')
@@ -148,75 +180,52 @@ jobs:
               f.write(f'failed={json.dumps(failed)}\n')
           PYEOF
         env:
-          REMAINING: ${{ steps.check_months.outputs.remaining }}
+          BATCH: ${{ steps.check_months.outputs.batch }}
 
       - name: 取得結果サマリ
-        if: steps.check_months.outputs.remaining_count != '0'
+        if: steps.check_months.outputs.batch_count != '0'
         run: |
           echo "=== 取得済みCSVファイル ==="
           ls -lh data/raceresults_*.csv 2>/dev/null || echo "ファイルなし"
-          echo ""
-          echo "=== 件数 ==="
           python3 - << 'PYEOF'
           import glob, os
-
           files = sorted(glob.glob('data/raceresults_*.csv'))
-          total_size = 0
+          total = 0
           for f in files:
               size = os.path.getsize(f)
-              total_size += size
               with open(f, encoding='utf-8-sig') as fp:
-                  lines = sum(1 for _ in fp) - 1  # ヘッダー除く
+                  lines = sum(1 for _ in fp) - 1
+              total += lines
               print(f'{os.path.basename(f)}: {lines}行 ({size//1024}KB)')
-          print(f'\n合計: {total_size//1024}KB')
+          print(f'\n合計: {total}行')
           PYEOF
 
-      - name: コミット & プッシュ
-        if: steps.check_months.outputs.remaining_count != '0'
-        id: commit
-        run: |
-          git config user.email "actions@github.com"
-          git config user.name "GitHub Actions [bot]"
-          git add data/raceresults_*.csv
-
-          if git diff --staged --quiet; then
-            echo "変更なし。スキップ。"
-            echo "committed=false" >> $GITHUB_OUTPUT
-          else
-            git commit -m "data: fetch netkeiba csv [skip ci]"
-            git push origin main
-            echo "committed=true" >> $GITHUB_OUTPUT
-          fi
-
       - name: Discord 完了通知
-        if: steps.check_months.outputs.remaining_count != '0' && always()
+        if: steps.check_months.outputs.batch_count != '0' && always()
         run: |
           python3 - << 'PYEOF'
           import requests, json, os
-
           webhook = os.environ.get('DISCORD_WEBHOOK_URL', '')
-          if not webhook:
-              exit(0)
+          if not webhook: exit(0)
 
-          succeeded = json.loads(os.environ.get('SUCCEEDED', '[]'))
-          failed    = json.loads(os.environ.get('FAILED', '[]'))
+          succeeded   = json.loads(os.environ.get('SUCCEEDED', '[]'))
+          failed      = json.loads(os.environ.get('FAILED', '[]'))
           done_count  = int(os.environ.get('DONE_COUNT', '0'))
           total_count = int(os.environ.get('TOTAL_COUNT', '0'))
-          new_done = done_count + len(succeeded)
+          new_done    = done_count + len(succeeded)
+          all_done    = new_done >= total_count
 
-          color = 0xE67E22 if failed else (0x2ECC71 if new_done >= total_count else 0x3498DB)
-          title = '⚠️ 完了（一部エラー）' if failed else ('🎉 全件完了！' if new_done >= total_count else '✅ 完了（継続中）')
+          color = 0xE67E22 if failed else (0x2ECC71 if all_done else 0x3498DB)
+          title = ('⚠️ 完了（一部エラー）' if failed else
+                   ('🎉 全件完了！' if all_done else f'✅ {len(succeeded)}ヶ月完了'))
 
-          lines = [
-              f'**今回取得成功**: {len(succeeded)}ヶ月',
-              f'**進捗**: {new_done}/{total_count}ヶ月',
-          ]
-          if succeeded:
-              lines.append(f'✅ 成功: {", ".join(succeeded)}')
-          if failed:
-              lines.append(f'❌ 失敗: {", ".join(failed)}')
+          lines = [f'**進捗**: {new_done}/{total_count}ヶ月']
+          if succeeded: lines.append(f'✅ 成功: {", ".join(succeeded)}')
+          if failed:    lines.append(f'❌ 失敗: {", ".join(failed)}（次回リトライ）')
+          if not all_done: lines.append(f'📅 残り{total_count - new_done}ヶ月 → 明日続行')
 
-          payload = {'embeds': [{'title': f'🏇 netkeiba CSV {title}', 'description': "\n".join(lines), 'color': color}]}
+          payload = {'embeds': [{'title': f'🏇 netkeiba CSV {title}',
+                                 'description': "\n".join(lines), 'color': color}]}
           requests.post(webhook, json=payload, timeout=10)
           PYEOF
         env:
@@ -231,13 +240,13 @@ jobs:
         run: |
           python3 - << 'PYEOF'
           import requests, os
-
           webhook = os.environ.get('DISCORD_WEBHOOK_URL', '')
-          if not webhook:
-              exit(0)
-
-          run_url = f'https://github.com/{os.environ.get("GITHUB_REPOSITORY","")}/actions/runs/{os.environ.get("GITHUB_RUN_ID","")}'
-          payload = {'embeds': [{'title': '🚨 netkeiba ワークフロー エラー', 'description': f'[ログを確認する]({run_url})', 'color': 0xE74C3C}]}
+          if not webhook: exit(0)
+          run_url = (f'https://github.com/{os.environ.get("GITHUB_REPOSITORY","")}'
+                     f'/actions/runs/{os.environ.get("GITHUB_RUN_ID","")}')
+          payload = {'embeds': [{'title': '🚨 netkeiba ワークフロー エラー',
+                                 'description': f'[ログを確認する]({run_url})',
+                                 'color': 0xE74C3C}]}
           requests.post(webhook, json=payload, timeout=10)
           PYEOF
         env:
