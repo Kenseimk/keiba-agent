@@ -1,0 +1,108 @@
+name: keiba-predict-notify
+
+on:
+  schedule:
+    # 毎週土・日の 7:00 JST (= 22:00 UTC 前日)
+    - cron: '0 22 * * 5'   # 金曜22時UTC = 土曜7時JST
+    - cron: '0 22 * * 6'   # 土曜22時UTC = 日曜7時JST
+  workflow_dispatch:
+    inputs:
+      capital:
+        description: '現在の軍資金 (円)'
+        default: '70000'
+        required: false
+      date:
+        description: '取得日 YYYYMMDD (省略=翌日)'
+        default: ''
+        required: false
+
+jobs:
+  predict:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+
+    steps:
+      - name: チェックアウト
+        uses: actions/checkout@v4
+
+      - name: Python セットアップ
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: 依存ライブラリのインストール
+        run: pip install requests beautifulsoup4
+
+      - name: 取得対象日を決定
+        id: set_date
+        run: |
+          python3 - << 'PYEOF'
+          import os, datetime
+
+          input_date = os.environ.get('INPUT_DATE', '').strip()
+          if input_date:
+              target = input_date
+          else:
+              # schedule実行: 翌日（UTC22時実行 → JST翌日7時）
+              d = datetime.date.today() + datetime.timedelta(days=1)
+              target = d.strftime('%Y%m%d')
+
+          print(f'取得対象日: {target}')
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
+              f.write(f'target_date={target}\n')
+          PYEOF
+        env:
+          INPUT_DATE: ${{ github.event.inputs.date }}
+
+      - name: 出馬表スクレイピング
+        id: scrape
+        run: |
+          python scrape_entries.py --date ${{ steps.set_date.outputs.target_date }} --output predict_input.csv
+          echo "rows=$(wc -l < predict_input.csv)" >> $GITHUB_OUTPUT
+
+      - name: レースなし判定
+        if: steps.scrape.outputs.rows == '1'
+        run: |
+          python3 - << 'PYEOF'
+          import requests, os, datetime
+          webhook = os.environ.get('DISCORD_WEBHOOK_URL', '')
+          if not webhook: exit(0)
+          d = os.environ.get('TARGET_DATE', '')
+          payload = {'embeds': [{'title': '🏇 競馬予測',
+              'description': f'{d} はJRA開催なし（または出馬表未公開）',
+              'color': 0x95a5a6}]}
+          requests.post(webhook, json=payload, timeout=10)
+          PYEOF
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          TARGET_DATE: ${{ steps.set_date.outputs.target_date }}
+
+      - name: 予測実行 & Discord通知
+        if: steps.scrape.outputs.rows != '1'
+        run: |
+          python predict_notify.py \
+            --capital ${{ github.event.inputs.capital || '70000' }} \
+            --input predict_input.csv \
+            --data data \
+            --date ${{ steps.set_date.outputs.target_date }}
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          CURRENT_CAPITAL: ${{ github.event.inputs.capital || '70000' }}
+
+      - name: エラー時Discord通知
+        if: failure()
+        run: |
+          python3 - << 'PYEOF'
+          import requests, os
+          webhook = os.environ.get('DISCORD_WEBHOOK_URL', '')
+          if not webhook: exit(0)
+          run_url = (f'https://github.com/{os.environ["GITHUB_REPOSITORY"]}'
+                     f'/actions/runs/{os.environ["GITHUB_RUN_ID"]}')
+          payload = {'embeds': [{'title': '🚨 競馬予測 エラー',
+              'description': f'[ログを確認する]({run_url})', 'color': 0xe74c3c}]}
+          requests.post(webhook, json=payload, timeout=10)
+          PYEOF
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
