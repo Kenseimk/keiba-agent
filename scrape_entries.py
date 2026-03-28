@@ -242,15 +242,23 @@ def main():
 
     print(f'取得対象日: {target_dates}')
 
-    session = requests.Session()
-    session.headers.update(HEADERS)
-    # Cookieセット用に一度アクセス
-    session.get('https://race.netkeiba.com/', timeout=10)
+    def new_session():
+        """新しいセッションを作成してCookieを取得"""
+        s = requests.Session()
+        s.headers.update(HEADERS)
+        try:
+            s.get('https://race.netkeiba.com/', timeout=10)
+        except Exception:
+            pass
+        return s
+
+    session = new_session()
     sleep(2, 3)
 
     all_rows = []
     race_meta = {}  # race_id -> race_name
     odds_call_count = 0  # レート制限対策: APIコール数カウンター
+    cooldown_count = 0   # クールダウン回数（段階的に延長）
 
     for date_str in target_dates:
         print(f'\n=== {date_str} のレース取得中 ===')
@@ -267,19 +275,33 @@ def main():
                 continue
             print(f'{len(horses)}頭', end=' ')
 
-            # 8レースごとに60秒休憩（レート制限リセット待ち）
-            if odds_call_count > 0 and odds_call_count % 8 == 0:
+            # 6レースごとにクールダウン（段階的に延長: 120→150→180→180s...）
+            if odds_call_count > 0 and odds_call_count % 6 == 0:
+                cooldown_count += 1
+                wait_sec = min(120 + (cooldown_count - 1) * 30, 180)
                 msg = (
                     f'⏳ **スクレイピング途中経過** ({date_str})\n'
-                    f'　{odds_call_count}/{len(race_ids)}レース 取得済み → レート制限対策で60秒待機中...'
+                    f'　{odds_call_count}/{len(race_ids)}レース 取得済み → {wait_sec}秒待機中...'
                 )
-                print(f'\n  [レート制限対策] {odds_call_count}件処理済み → 60秒待機中...', flush=True)
+                print(f'\n  [レート制限対策] {odds_call_count}件処理済み → {wait_sec}s待機+セッション刷新...', flush=True)
                 notify_discord(msg)
-                time.sleep(60)
+                time.sleep(wait_sec)
+                # セッション刷新（新しいCookieでリセット）
+                session = new_session()
+                sleep(2, 3)
 
             odds_map = fetch_odds(session, race_id)
             odds_call_count += 1
-            sleep(4.0, 7.0)  # レート制限対策: 十分に待機
+
+            # オッズ取得失敗時は追加待機してリトライ
+            if not odds_map:
+                print(f'  [オッズ失敗] 60秒追加待機してリトライ...', flush=True)
+                time.sleep(60)
+                session = new_session()
+                sleep(2, 3)
+                odds_map = fetch_odds(session, race_id)
+
+            sleep(5.0, 8.0)  # レート制限対策: 十分に待機
             print(f'オッズ{len(odds_map)}件')
 
             venue_name = VENUE_NAMES.get(race_id[4:6], race_id[4:6])
