@@ -8,10 +8,8 @@ judge.py - JRA URLを貼るだけで賭け判断を出力
 import sys, io, os, re, time, argparse, requests
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from backtest_core import load_data, update_prev_history, top3_prob
-from predict import ANA_PARAMS, FUKUSHO_PARAMS
+from strategy import build_prev_history, judge_ana_single, judge_fukusho_single
 from scrape_entries import fetch_race_ids, fetch_shutuba, fetch_odds, HEADERS
-from collections import defaultdict
 
 # JRA会場コード → netkeiba会場コード
 JRA_TO_NETKEIBA = {
@@ -74,70 +72,6 @@ def find_netkeiba_race_id(session, date_str, jra_venue, race_num):
     return None
 
 
-def build_prev_history(data_dir):
-    """過去データから前走履歴を構築"""
-    races_hist, _ = load_data(data_dir)
-    by_month = defaultdict(list)
-    for rid, info in races_hist.items():
-        by_month[info['ym']].append((rid, info))
-
-    prev_history, prev_history2 = {}, {}
-    for ym in sorted(by_month.keys()):
-        for rid, info in by_month[ym]:
-            update_prev_history(info['horses'], prev_history, prev_history2)
-    return prev_history
-
-
-def judge_ana(horses, race_id_label, capital):
-    """穴馬複勝戦略の判定"""
-    p = ANA_PARAMS
-    if len(horses) < p['field_min']:
-        return None
-
-    fav_odds  = min(h['odds'] for h in horses)
-    field_size = len(horses)
-    best = None
-
-    for h in horses:
-        if not (p['pop_min'] <= h['popularity'] <= p['pop_max']): continue
-        if not (p['odds_min'] <= h['odds'] < p['odds_max']): continue
-        prob = top3_prob(h['odds'], fav_odds, field_size, h['popularity'])
-        if prob >= p['prob_min']:
-            if best is None or prob > best['prob']:
-                bet = 0
-                for thresh, pct, cap_limit in p['kelly_tiers']:
-                    if prob >= thresh:
-                        bet = min(int(capital * pct / 100) * 100, cap_limit)
-                        break
-                best = {**h, 'prob': prob, 'bet': bet,
-                        'fav_odds': fav_odds, 'field_size': field_size}
-    return best
-
-
-def judge_fukusho(horses, prev_history, race_id_label, capital):
-    """隠れ末脚型複勝戦略の判定"""
-    p = FUKUSHO_PARAMS
-    if len(horses) < p['field_min']:
-        return None
-
-    best = None
-    for h in horses:
-        if not (p['pop_min'] <= h['popularity'] <= p['pop_max']): continue
-        if not (p['odds_min'] <= h['odds'] < p['odds_max']): continue
-        ph = prev_history.get(h['name'])
-        if ph is None: continue
-        if ph['field_size'] < p['prev_field_min']: continue
-        if ph['f3rank'] > p['prev_f3rank_max']: continue
-        if ph['finish_rank'] < p['prev_finish_min']: continue
-        bet = min(int(capital * p['kelly_pct'] / 100) * 100, p['kelly_max'])
-        if best is None or h['odds'] > best['odds']:
-            best = {**h, 'bet': bet,
-                    'prev_f3rank': ph['f3rank'],
-                    'prev_finish': ph['finish_rank'],
-                    'prev_corner': ph.get('last_corner', '?'),
-                    'prev_field':  ph['field_size'],
-                    'f3_adv':      ph.get('f3_advantage', 0.0)}
-    return best
 
 
 def main():
@@ -210,7 +144,7 @@ def main():
 
     # ── 前走履歴構築 ─────────────────────────────────
     print('過去データ読み込み中...')
-    prev_history = build_prev_history(args.data)
+    prev_history, n_races, _ = build_prev_history(args.data)
     print(f'  → {len(prev_history)}頭の前走データ構築完了')
 
     race_label = f'{date_str}_{venue_name}{int(race_num)}R_{race_name}'
@@ -225,7 +159,7 @@ def main():
     bet_any = False
 
     # 穴馬複勝
-    ana = judge_ana(horses, race_label, args.capital)
+    ana = judge_ana_single(horses, args.capital)
     print()
     print('🎯 穴馬複勝戦略')
     if ana:
@@ -237,7 +171,7 @@ def main():
         print('  ❌ 対象馬なし')
 
     # 隠れ末脚型複勝
-    fuk = judge_fukusho(horses, prev_history, race_label, args.capital)
+    fuk = judge_fukusho_single(horses, prev_history, args.capital)
     print()
     print('⚡ 隠れ末脚型複勝戦略')
     if fuk:
