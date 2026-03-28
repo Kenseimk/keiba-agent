@@ -26,38 +26,39 @@ BASE_HEADERS = {
 }
 
 NEW_COLUMNS = [
-    'race_id', 'race_name', 'grade', '着順', '枠番', '馬番', '馬名', '性齢', '斤量', '騎手',
+    'race_id', 'race_name', 'grade', '距離', 'コース', '馬場状態',
+    '着順', '枠番', '馬番', '馬名', '性齢', '斤量', '騎手',
     'タイム', '着差', '通過順', '上がり3F', '単勝オッズ', '人気', '馬体重',
     '年', '場コード', '回次', '日次', 'レース番号',
     '単勝払戻', '複勝払戻', '馬連払戻', '馬単払戻', 'ワイド払戻', '三連複払戻', '三連単払戻'
 ]
 
 
-def get_race_name_grade(session, race_id):
-    """db.netkeiba.com からレース名とグレードを取得"""
+def get_race_meta(session, race_id):
+    """db.netkeiba.com からレース名・グレード・距離・コース・馬場状態を取得"""
     url = f'https://db.netkeiba.com/race/{race_id}/'
     try:
         r = session.get(url, timeout=15)
         if r.status_code == 404:
-            return '', ''
+            return '', '', '', '', ''
         if r.status_code == 429:
             print(f'  [429] レート制限 → 60秒待機')
             time.sleep(60)
-            return get_race_name_grade(session, race_id)
+            return get_race_meta(session, race_id)
         r.encoding = 'EUC-JP'
         soup = BeautifulSoup(r.text, 'html.parser')
 
-        # CSSセレクタで試みる
+        # タイトル
+        title_tag = soup.select_one('title')
+        title_text = title_tag.get_text() if title_tag else ''
+
+        # レース名
         race_name = ''
         for sel in ['.RaceName', '.race_name', 'h1.RaceMainTitle', '.RaceMainTitle']:
             el = soup.select_one(sel)
             if el:
                 race_name = el.get_text(strip=True)
                 break
-
-        # タイトルからフォールバック
-        title_tag = soup.select_one('title')
-        title_text = title_tag.get_text() if title_tag else ''
         if not race_name:
             m = re.match(r'^([^\d｜|（(]+?)(?:\s*[\(（]G[123][\)）])?\s*(?:\d|｜|\||結果|出走)', title_text.strip())
             if m:
@@ -69,11 +70,25 @@ def get_race_name_grade(session, race_id):
         if gm:
             grade = gm.group(1)
 
-        return race_name, grade
+        # 距離・コース・馬場状態
+        dist_text = course = track_cond = ''
+        snap = soup.select_one('.mainrace_data') or soup.select_one('.diary_snap_cut')
+        if snap:
+            snap_str = snap.get_text(' ', strip=True)
+            dm = re.search(r'(芝|ダ|障).*?(\d{3,4})m', snap_str)
+            if dm:
+                surface_char = dm.group(1)
+                dist_text = dm.group(2)
+                course = '芝' if surface_char == '芝' else ('ダート' if surface_char == 'ダ' else '障害')
+            tc = re.search(r'(?:芝|ダート)\s*:\s*(良|稍重|重|不良)', snap_str)
+            if tc:
+                track_cond = tc.group(1)
+
+        return race_name, grade, dist_text, course, track_cond
 
     except Exception as e:
         print(f'  [ERROR] {race_id}: {e}')
-        return '', ''
+        return '', '', '', '', ''
 
 
 def process_file(fpath, session):
@@ -96,11 +111,14 @@ def process_file(fpath, session):
     race_name_map = {}
 
     if has_race_name:
-        # 既存の値を引き継ぐ
+        # 既存の値を引き継ぐ（距離・コース・馬場も）
         for r in rows:
             rid = r['race_id']
             if rid not in race_name_map and r.get('race_name', '').strip():
-                race_name_map[rid] = (r['race_name'], r.get('grade', ''))
+                race_name_map[rid] = (
+                    r['race_name'], r.get('grade', ''),
+                    r.get('距離', ''), r.get('コース', ''), r.get('馬場状態', '')
+                )
 
     # 未取得分のみフェッチ
     to_fetch = [rid for rid in race_ids if rid not in race_name_map]
@@ -112,11 +130,11 @@ def process_file(fpath, session):
             print(f'  [{i}/{len(to_fetch)}] {BURST_INTERVAL}件完了 → {wait:.1f}秒待機')
             time.sleep(wait)
 
-        name, grade = get_race_name_grade(session, rid)
-        race_name_map[rid] = (name, grade)
+        name, grade, dist, course, track = get_race_meta(session, rid)
+        race_name_map[rid] = (name, grade, dist, course, track)
 
         if i <= 3 or i % 50 == 0:
-            print(f'  [{i}/{len(to_fetch)}] {rid} → "{name}" {grade}')
+            print(f'  [{i}/{len(to_fetch)}] {rid} → "{name}" {grade} {dist}m {course} {track}')
 
         time.sleep(random.uniform(SLEEP_MIN, SLEEP_MAX))
 
@@ -126,9 +144,12 @@ def process_file(fpath, session):
         writer.writeheader()
         for row in rows:
             rid = row['race_id']
-            name, grade = race_name_map.get(rid, ('', ''))
+            name, grade, dist, course, track = race_name_map.get(rid, ('', '', '', '', ''))
             row['race_name'] = name
             row['grade']     = grade
+            row['距離']      = dist
+            row['コース']    = course
+            row['馬場状態']  = track
             writer.writerow(row)
 
     print(f'  ✅ 完了: {len(rows)}行 更新')
