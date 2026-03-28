@@ -7,8 +7,6 @@ scrape_entries.py - 当日/翌日のJRA出馬表をスクレイピングして p
   python scrape_entries.py --next-weekend   # 次の土日
 """
 import sys, io, os, re, time, random, csv, argparse, datetime, requests
-if sys.platform == 'win32':
-    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', line_buffering=True)
 from bs4 import BeautifulSoup
 
 HEADERS = {
@@ -334,4 +332,6 @@ def main():
     )
 
 if __name__ == '__main__':
+    if sys.platform == 'win32':
+        sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', line_buffering=True)
     main()
