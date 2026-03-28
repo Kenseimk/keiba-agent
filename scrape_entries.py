@@ -223,6 +223,8 @@ def main():
     parser.add_argument('--date', default='', help='取得日 YYYYMMDD (省略=今日)')
     parser.add_argument('--next-weekend', action='store_true', help='次の土日を取得')
     parser.add_argument('--output', default='predict_input.csv', help='出力CSVパス')
+    parser.add_argument('--race-min', type=int, default=1,  help='取得開始レース番号 (デフォルト: 1)')
+    parser.add_argument('--race-max', type=int, default=12, help='取得終了レース番号 (デフォルト: 12)')
     args = parser.parse_args()
 
     today = datetime.date.today()
@@ -255,7 +257,8 @@ def main():
     for date_str in target_dates:
         print(f'\n=== {date_str} のレース取得中 ===')
         race_ids = fetch_race_ids(session, date_str)
-        print(f'  {len(race_ids)}レース発見: {race_ids[:5]}...')
+        race_ids = [r for r in race_ids if args.race_min <= int(r[10:12]) <= args.race_max]
+        print(f'  {len(race_ids)}レース発見 ({args.race_min}〜{args.race_max}R対象): {race_ids[:5]}...')
 
         for race_id in race_ids:
             print(f'  [{race_id}] 出馬表取得中...', end=' ')

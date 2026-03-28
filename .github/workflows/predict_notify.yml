@@ -2,9 +2,12 @@ name: keiba-predict-notify
 
 on:
   schedule:
-    # 毎週土・日の 7:00 JST (= 22:00 UTC 前日)
+    # 朝7時JST (UTC前日22時): 前半レース(1〜6R)取得
     - cron: '0 22 * * 5'   # 金曜22時UTC = 土曜7時JST
     - cron: '0 22 * * 6'   # 土曜22時UTC = 日曜7時JST
+    # 昼12時JST (UTC当日3時): 後半レース(7〜12R)取得 + 予測
+    - cron: '0 3 * * 6'    # 土曜3時UTC = 土曜12時JST
+    - cron: '0 3 * * 0'    # 日曜3時UTC = 日曜12時JST
   workflow_dispatch:
     inputs:
       capital:
@@ -12,61 +15,194 @@ on:
         default: '70000'
         required: false
       date:
-        description: '取得日 YYYYMMDD (省略=翌日)'
+        description: '取得日 YYYYMMDD (省略=今日)'
         default: ''
         required: false
 
+# ─────────────────────────────────────────────────────────
+# JOB 1: 朝7時 — 前半レース(1〜6R)取得 & Artifact保存
+# ─────────────────────────────────────────────────────────
 jobs:
-  predict:
+  scrape-am:
+    if: |
+      github.event_name == 'schedule' &&
+      (github.event.schedule == '0 22 * * 5' || github.event.schedule == '0 22 * * 6')
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
       contents: read
 
     steps:
-      - name: チェックアウト
-        uses: actions/checkout@v4
-
-      - name: Python セットアップ
-        uses: actions/setup-python@v5
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+      - run: pip install requests beautifulsoup4
 
-      - name: 依存ライブラリのインストール
-        run: pip install requests beautifulsoup4
-
-      - name: 取得対象日を決定
+      - name: 対象日決定 (翌日 = レース当日)
         id: set_date
         run: |
           python3 - << 'PYEOF'
           import os, datetime
-
           input_date = os.environ.get('INPUT_DATE', '').strip()
           if input_date:
               target = input_date
           else:
-              # schedule実行: 翌日（UTC22時実行 → JST翌日7時）
               d = datetime.date.today() + datetime.timedelta(days=1)
               target = d.strftime('%Y%m%d')
-
-          print(f'取得対象日: {target}')
+          print(f'対象日: {target}')
           with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
               f.write(f'target_date={target}\n')
           PYEOF
         env:
           INPUT_DATE: ${{ github.event.inputs.date }}
 
-      - name: 出馬表スクレイピング
-        id: scrape
+      - name: 前半レース取得 (1〜6R)
         run: |
-          python scrape_entries.py --date ${{ steps.set_date.outputs.target_date }} --output predict_input.csv
-          echo "rows=$(wc -l < predict_input.csv)" >> $GITHUB_OUTPUT
+          python scrape_entries.py \
+            --date ${{ steps.set_date.outputs.target_date }} \
+            --race-max 6 \
+            --output predict_input_am.csv
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
 
-      - name: レースなし判定
-        if: steps.scrape.outputs.rows == '1'
+      - name: Artifactに保存
+        uses: actions/upload-artifact@v4
+        with:
+          name: predict-input-am-${{ steps.set_date.outputs.target_date }}
+          path: predict_input_am.csv
+          retention-days: 1
+
+      - name: 前半完了をDiscordに通知
         run: |
           python3 - << 'PYEOF'
-          import requests, os, datetime
+          import requests, os, csv
+          webhook = os.environ.get('DISCORD_WEBHOOK_URL', '')
+          if not webhook: exit(0)
+          rows = 0
+          try:
+              with open('predict_input_am.csv', encoding='utf-8-sig') as f:
+                  rows = sum(1 for r in csv.DictReader(f) if r.get('単勝オッズ','').strip())
+          except: pass
+          payload = {'embeds': [{'title': '🌅 前半レース取得完了',
+              'description': f'1〜6R: {rows}頭分のオッズ取得\n昼12時に後半(7〜12R)を取得して予測します',
+              'color': 0x3498db}]}
+          requests.post(webhook, json=payload, timeout=10)
+          PYEOF
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+
+      - name: エラー時Discord通知
+        if: failure()
+        run: |
+          python3 - << 'PYEOF'
+          import requests, os
+          webhook = os.environ.get('DISCORD_WEBHOOK_URL', '')
+          if not webhook: exit(0)
+          run_url = (f'https://github.com/{os.environ["GITHUB_REPOSITORY"]}'
+                     f'/actions/runs/{os.environ["GITHUB_RUN_ID"]}')
+          payload = {'embeds': [{'title': '🚨 前半取得 エラー',
+              'description': f'[ログを確認する]({run_url})', 'color': 0xe74c3c}]}
+          requests.post(webhook, json=payload, timeout=10)
+          PYEOF
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+
+
+# ─────────────────────────────────────────────────────────
+# JOB 2: 昼12時 or 手動 — 後半取得 + 結合 + 予測
+# ─────────────────────────────────────────────────────────
+  predict-pm:
+    if: |
+      (github.event_name == 'schedule' &&
+        (github.event.schedule == '0 3 * * 6' || github.event.schedule == '0 3 * * 0')) ||
+      github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install requests beautifulsoup4
+
+      - name: 対象日決定
+        id: set_date
+        run: |
+          python3 - << 'PYEOF'
+          import os, datetime
+          input_date = os.environ.get('INPUT_DATE', '').strip()
+          if input_date:
+              target = input_date
+          else:
+              # 昼12時JST = UTC3時: today() = 当日
+              target = datetime.date.today().strftime('%Y%m%d')
+          print(f'対象日: {target}')
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
+              f.write(f'target_date={target}\n')
+          PYEOF
+        env:
+          INPUT_DATE: ${{ github.event.inputs.date }}
+
+      - name: 前半Artifact取得 (なくてもOK)
+        id: dl_am
+        uses: actions/download-artifact@v4
+        with:
+          name: predict-input-am-${{ steps.set_date.outputs.target_date }}
+        continue-on-error: true
+
+      - name: 後半レース取得 (7〜12R / 手動時は全レース)
+        run: |
+          if [ -f predict_input_am.csv ]; then
+            echo "前半CSVあり → 7〜12Rのみ取得"
+            python scrape_entries.py \
+              --date ${{ steps.set_date.outputs.target_date }} \
+              --race-min 7 \
+              --output predict_input_pm.csv
+          else
+            echo "前半CSVなし → 全レース取得"
+            python scrape_entries.py \
+              --date ${{ steps.set_date.outputs.target_date }} \
+              --output predict_input_pm.csv
+          fi
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+
+      - name: CSV結合
+        run: |
+          python3 - << 'PYEOF'
+          import csv, os
+          rows = []
+          header = None
+          for fname in ['predict_input_am.csv', 'predict_input_pm.csv']:
+              if not os.path.exists(fname):
+                  continue
+              with open(fname, encoding='utf-8-sig') as f:
+                  r = csv.DictReader(f)
+                  if header is None:
+                      header = r.fieldnames
+                  for row in r:
+                      if row.get('単勝オッズ', '').strip():
+                          rows.append(row)
+          with open('predict_input.csv', 'w', encoding='utf-8-sig', newline='') as f:
+              w = csv.DictWriter(f, fieldnames=header)
+              w.writeheader()
+              w.writerows(rows)
+          print(f'結合完了: {len(rows)}行 ({len(set(r["race_id"] for r in rows))}レース)')
+          PYEOF
+
+      - name: レースなし判定
+        id: check_rows
+        run: echo "rows=$(wc -l < predict_input.csv)" >> $GITHUB_OUTPUT
+
+      - name: レースなし通知
+        if: steps.check_rows.outputs.rows == '1'
+        run: |
+          python3 - << 'PYEOF'
+          import requests, os
           webhook = os.environ.get('DISCORD_WEBHOOK_URL', '')
           if not webhook: exit(0)
           d = os.environ.get('TARGET_DATE', '')
@@ -80,7 +216,7 @@ jobs:
           TARGET_DATE: ${{ steps.set_date.outputs.target_date }}
 
       - name: 予測実行 & Discord通知
-        if: steps.scrape.outputs.rows != '1'
+        if: steps.check_rows.outputs.rows != '1'
         run: |
           python predict_notify.py \
             --capital ${{ github.event.inputs.capital || '70000' }} \
