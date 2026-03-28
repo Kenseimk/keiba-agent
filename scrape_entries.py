@@ -234,6 +234,7 @@ def main():
 
     all_rows = []
     race_meta = {}  # race_id -> race_name
+    odds_call_count = 0  # レート制限対策: APIコール数カウンター
 
     for date_str in target_dates:
         print(f'\n=== {date_str} のレース取得中 ===')
@@ -249,7 +250,13 @@ def main():
                 continue
             print(f'{len(horses)}頭', end=' ')
 
+            # 8レースごとに60秒休憩（レート制限リセット待ち）
+            if odds_call_count > 0 and odds_call_count % 8 == 0:
+                print(f'\n  [レート制限対策] {odds_call_count}件処理済み → 60秒待機中...', flush=True)
+                time.sleep(60)
+
             odds_map = fetch_odds(session, race_id)
+            odds_call_count += 1
             sleep(4.0, 7.0)  # レート制限対策: 十分に待機
             print(f'オッズ{len(odds_map)}件')
 
