@@ -177,3 +177,67 @@ def judge_fukusho_single(horses, prev_history, capital):
                     'prev_field':  ph['field_size'],
                     'f3_adv':      ph.get('f3_advantage', 0.0)}
     return best
+
+
+# ══════════════════════════════════════════════════════════
+# グレード別分析（G1/G2/G3 重賞）
+# ══════════════════════════════════════════════════════════
+
+# 重賞レースのみに適用する緩めの候補表示パラメータ
+# ※ 重賞はフィールドが強く複勝圏の予測が難しいため、
+#    まず広く候補を洗い出して人間が判断する形にする
+GRADED_DISPLAY_PARAMS = {
+    'G1': {'odds_min': 5.0,  'odds_max': 50.0, 'pop_min': 3, 'pop_max': 14},
+    'G2': {'odds_min': 5.0,  'odds_max': 40.0, 'pop_min': 3, 'pop_max': 12},
+    'G3': {'odds_min': 5.0,  'odds_max': 35.0, 'pop_min': 3, 'pop_max': 12},
+}
+
+
+def graded_race_analysis(horses, grade, prev_history):
+    """重賞レースの候補馬リストを返す（参考情報として表示用）
+
+    Returns: list of {name, odds, pop, prob, prev_f3rank, prev_finish, ...}
+    """
+    p = GRADED_DISPLAY_PARAMS.get(grade, GRADED_DISPLAY_PARAMS['G3'])
+    if not horses:
+        return []
+
+    fav_odds   = min(h['odds'] for h in horses)
+    field_size = len(horses)
+
+    results = []
+    for h in horses:
+        if not (p['pop_min'] <= h['popularity'] <= p['pop_max']): continue
+        if not (p['odds_min'] <= h['odds'] < p['odds_max']): continue
+        prob = top3_prob(h['odds'], fav_odds, field_size, h['popularity'])
+        ph   = prev_history.get(h['name'])
+        results.append({
+            'name':        h['name'],
+            'odds':        h['odds'],
+            'pop':         h['popularity'],
+            'prob':        prob,
+            'prev_f3rank': ph['f3rank']      if ph else None,
+            'prev_finish': ph['finish_rank'] if ph else None,
+            'prev_field':  ph['field_size']  if ph else None,
+            'f3_adv':      ph.get('f3_advantage', 0.0) if ph else 0.0,
+        })
+    results.sort(key=lambda x: -x['prob'])
+    return results
+
+
+def split_by_grade(races_input, race_grades):
+    """races_input を重賞と非重賞に分割する
+
+    Returns:
+        regular: {race_id: horses}  # G1/G2/G3 以外
+        graded:  {race_id: (grade, horses)}  # G1/G2/G3
+    """
+    regular = {}
+    graded  = {}
+    for race_id, horses in races_input.items():
+        grade = race_grades.get(race_id, '')
+        if grade in ('G1', 'G2', 'G3'):
+            graded[race_id] = (grade, horses)
+        else:
+            regular[race_id] = horses
+    return regular, graded

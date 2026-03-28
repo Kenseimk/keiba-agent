@@ -90,7 +90,7 @@ def fetch_shutuba(session, race_id):
     if not r: return [], ''
     soup = BeautifulSoup(r.content, 'html.parser')
 
-    # レース名
+    # レース名・グレード
     race_name = ''
     for sel in ['.RaceName', 'h2.RaceName', '[class*="RaceName"]']:
         el = soup.select_one(sel)
@@ -99,6 +99,21 @@ def fetch_shutuba(session, race_id):
             break
     if not race_name:
         race_name = f'{race_id[10:12]}R'
+
+    # グレード判定（タイトルまたはページ本文から）
+    grade = ''
+    title_tag = soup.find('title')
+    title_text = title_tag.get_text() if title_tag else ''
+    for g in ['G1', 'G2', 'G3']:
+        if f'({g})' in title_text or f'（{g}）' in title_text:
+            grade = g
+            break
+    if not grade:
+        # ページ本文のGradeIconクラス等からも試みる
+        for g in ['G1', 'G2', 'G3']:
+            if soup.find(class_=re.compile(g)):
+                grade = g
+                break
 
     horses = []
     # メインテーブルから馬情報取得
@@ -154,7 +169,7 @@ def fetch_shutuba(session, race_id):
                     'shutuba_odds': shutuba_odds,
                     'shutuba_pop':  shutuba_pop,
                 })
-    return horses, race_name
+    return horses, race_name, grade
 
 # ── オッズ取得 ────────────────────────────────────────────
 def fetch_odds(session, race_id):
@@ -268,7 +283,7 @@ def main():
 
         for race_id in race_ids:
             print(f'  [{race_id}] 出馬表取得中...', end=' ')
-            horses, race_name = fetch_shutuba(session, race_id)
+            horses, race_name, grade = fetch_shutuba(session, race_id)
             sleep(3.0, 5.0)
             if not horses:
                 print('スキップ（馬なし）')
@@ -325,19 +340,20 @@ def main():
                     '騎手':        h['jockey'],
                     '馬体重':      h['weight'],
                     '馬番':        h['umaban'],
+                    'grade':       grade,
                 })
 
     if not all_rows:
         print('\n対象レースなし（本日はJRA開催なし）')
         # 空ファイルを出力して workflow が続けられるようにする
         with open(args.output, 'w', encoding='utf-8-sig', newline='') as f:
-            w = csv.DictWriter(f, fieldnames=['race_id','馬名','単勝オッズ','人気','騎手','馬体重','馬番'])
+            w = csv.DictWriter(f, fieldnames=['race_id','馬名','単勝オッズ','人気','騎手','馬体重','馬番','grade'])
             w.writeheader()
         sys.exit(0)
 
     # CSV書き出し
     with open(args.output, 'w', encoding='utf-8-sig', newline='') as f:
-        writer = csv.DictWriter(f, fieldnames=['race_id','馬名','単勝オッズ','人気','騎手','馬体重','馬番'])
+        writer = csv.DictWriter(f, fieldnames=['race_id','馬名','単勝オッズ','人気','騎手','馬体重','馬番','grade'])
         writer.writeheader()
         for row in all_rows:
             writer.writerow(row)

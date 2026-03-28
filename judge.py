@@ -106,7 +106,7 @@ def main():
 
     # ── 出馬表・オッズ取得 ────────────────────────────
     print('出馬表取得中...')
-    horses_raw, race_name = fetch_shutuba(session, race_id)
+    horses_raw, race_name, grade = fetch_shutuba(session, race_id)
     time.sleep(2)
     if not horses_raw:
         print('[ERROR] 出馬表が取得できませんでした')

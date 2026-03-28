@@ -18,28 +18,38 @@ R02,サクラバクシンオー,16.0,8,川田,470(-4)
 import sys, io, csv, argparse, os
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from strategy import ANA_PARAMS, FUKUSHO_PARAMS, ana_candidates, fukusho_candidates, build_prev_history
+from strategy import (ANA_PARAMS, FUKUSHO_PARAMS,
+                      ana_candidates, fukusho_candidates, build_prev_history,
+                      graded_race_analysis, split_by_grade)
 from collections import defaultdict
 
 # ══════════════════════════════════════════════════════════
 # 入力CSV 読み込み
 # ══════════════════════════════════════════════════════════
 def load_input(path):
+    """CSVを読み込み {race_id: [horse_dict, ...]} を返す。
+    各 race_id には grade キーを付与（race_meta にも格納）。
+    """
     races = defaultdict(list)
+    race_grades = {}  # race_id -> grade
     with open(path, encoding='utf-8-sig') as f:
         for row in csv.DictReader(f):
             try:
-                races[row['race_id'].strip()].append({
+                rid = row['race_id'].strip()
+                grade = row.get('grade', '').strip()
+                race_grades[rid] = grade
+                races[rid].append({
                     'name':       row['馬名'].strip(),
                     'odds':       float(row['単勝オッズ']),
                     'popularity': int(row['人気']),
                     'jockey':     row.get('騎手', '').strip(),
                     'weight':     row.get('馬体重', '').strip(),
                     'umaban':     row.get('馬番', '').strip(),
+                    'grade':      grade,
                 })
             except Exception as e:
                 print(f'  [WARN] 行スキップ: {row} ({e})')
-    return races
+    return races, race_grades
 
 # ══════════════════════════════════════════════════════════
 # メイン
@@ -74,18 +84,29 @@ def main():
         sys.exit(1)
 
     print(f'\n入力ファイル: {args.input}')
-    races_input = load_input(args.input)
+    races_input, race_grades = load_input(args.input)
     total_horses = sum(len(v) for v in races_input.values())
     print(f'  {len(races_input)}レース / {total_horses}頭 読み込み完了')
 
-    # ── 穴馬戦略 ────────────────────────────────────────
+    # 重賞と非重賞に分割
+    regular_races, graded_races = split_by_grade(races_input, race_grades)
+    if graded_races:
+        grade_summary = ', '.join(f'{g}:{rid.split("_",2)[-1]}' for rid, (g, _) in graded_races.items())
+        print(f'  うち重賞: {len(graded_races)}レース ({grade_summary})')
+
+    # ══════════════════════════════════════════════════════
+    # 【一般レース】汎用戦略
+    # ══════════════════════════════════════════════════════
     print('\n' + '=' * 65)
-    print('【穴馬複勝戦略】')
+    print('【一般レース】汎用戦略')
+    print('=' * 65)
+
+    # ── 穴馬戦略 ────────────────────────────────────────
+    print('\n▶ 穴馬複勝戦略')
     print('  条件: オッズ10〜30倍 / 4〜18番人気 / 8頭立て以上')
-    print(f'  Kelly: 確率≥35%→3%(上限¥20,000) / ≥30%→2%(¥15,000) / その他→1.5%(¥8,000)')
     print()
 
-    ana_cands = ana_candidates(races_input, args.capital)
+    ana_cands = ana_candidates(regular_races, args.capital)
     seen_ana  = set()
     if not ana_cands:
         print('  対象馬なし')
@@ -93,7 +114,7 @@ def main():
         total_bet_ana = 0
         for c in ana_cands:
             if c['race_id'] in seen_ana:
-                continue  # 1レース1頭（最高確率）
+                continue
             seen_ana.add(c['race_id'])
             total_bet_ana += c['bet']
             print(f"  ✅ [{c['race_id']}] {c['name']}")
@@ -102,13 +123,11 @@ def main():
         print(f'\n  合計ベット予定: ¥{total_bet_ana:,}')
 
     # ── 隠れ末脚型複勝戦略 ──────────────────────────────
-    print('\n' + '=' * 65)
-    print('【隠れ末脚型複勝戦略】')
+    print('\n▶ 隠れ末脚型複勝戦略')
     print('  条件: 前走上がり3F 1位 / 前走7着以下 / 今走オッズ14〜18倍 / 6〜12番人気')
-    print(f'  Kelly: 軍資金の3%(上限¥15,000)')
     print()
 
-    fuk_cands = fukusho_candidates(races_input, prev_history, args.capital)
+    fuk_cands = fukusho_candidates(regular_races, prev_history, args.capital)
     seen_fuk  = set()
     if not fuk_cands:
         print('  対象馬なし')
@@ -116,7 +135,7 @@ def main():
         total_bet_fuk = 0
         for c in fuk_cands:
             if c['race_id'] in seen_fuk:
-                continue  # 1レース1頭
+                continue
             seen_fuk.add(c['race_id'])
             total_bet_fuk += c['bet']
             adv_str = f'  前走2位より{c["f3_adv"]:.1f}秒速い' if c['f3_adv'] > 0 else ''
@@ -127,11 +146,35 @@ def main():
             print(f"     → ベット: ¥{c['bet']:,}")
         print(f'\n  合計ベット予定: ¥{total_bet_fuk:,}')
 
-    # ── 合計 ─────────────────────────────────────────────
+    # ══════════════════════════════════════════════════════
+    # 【重賞レース】グレード別分析
+    # ══════════════════════════════════════════════════════
+    if graded_races:
+        print('\n' + '=' * 65)
+        print('【重賞レース】グレード別分析（参考）')
+        print('  ※ 汎用戦略対象外。上位候補を表示します。')
+        print('=' * 65)
+
+        for race_id, (grade, horses) in graded_races.items():
+            race_label = race_id.split('_', 2)[-1] if '_' in race_id else race_id
+            print(f'\n  [{grade}] {race_label}  {len(horses)}頭立て')
+            cands = graded_race_analysis(horses, grade, prev_history)
+            if not cands:
+                print('    → 対象候補なし')
+                continue
+            fav_odds = min(h['odds'] for h in horses)
+            print(f'    1番人気オッズ: {fav_odds:.1f}倍')
+            for c in cands[:5]:
+                f3_str = f"前走上がり{c['prev_f3rank']}位/{c['prev_finish']}着" if c['prev_f3rank'] else '前走データなし'
+                print(f"    {c['pop']:2d}番人気 {c['odds']:5.1f}倍  {c['name']}  複勝確率{c['prob']:.1f}%  {f3_str}")
+
+    # ══════════════════════════════════════════════════════
+    # 合計
+    # ══════════════════════════════════════════════════════
     print('\n' + '=' * 65)
     ana_total = sum(c['bet'] for c in ana_cands if c['race_id'] in seen_ana)
     fuk_total = sum(c['bet'] for c in fuk_cands if c['race_id'] in seen_fuk)
-    print(f'【本日の合計ベット予定】')
+    print(f'【本日の合計ベット予定（一般レース）】')
     print(f'  穴馬:      ¥{ana_total:,}  ({len(seen_ana)}レース)')
     print(f'  隠れ末脚:  ¥{fuk_total:,}  ({len(seen_fuk)}レース)')
     print(f'  残り軍資金(概算): ¥{args.capital - ana_total - fuk_total:,}')
