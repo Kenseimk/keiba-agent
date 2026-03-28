@@ -34,7 +34,7 @@ MAX_RETRIES     = 3
 SESSION_RESET_INTERVAL = 50
 
 CSV_COLUMNS = [
-    'race_id','着順','枠番','馬番','馬名','性齢','斤量','騎手',
+    'race_id','race_name','grade','着順','枠番','馬番','馬名','性齢','斤量','騎手',
     'タイム','着差','通過順','上がり3F','単勝オッズ','人気','馬体重',
     '年','場コード','回次','日次','レース番号',
     '単勝払戻','複勝払戻','馬連払戻','馬単払戻','ワイド払戻','三連複払戻','三連単払戻'
@@ -199,10 +199,32 @@ def fetch_race_rows(race_id: str) -> list:
             table = soup.select_one('.race_table_01')
             if not table: return None
 
-            # 新馬戦を除外
+            # タイトルからレース名・グレード取得
             title = soup.select_one('title')
-            if title and '新馬' in title.text:
+            title_text = title.get_text() if title else ''
+
+            # 新馬戦を除外
+            if '新馬' in title_text:
                 return None
+
+            # レース名抽出: "有馬記念(G1) 2024年..." → "有馬記念"
+            race_name = ''
+            grade     = ''
+            # まずCSSセレクタで試みる
+            for sel in ['.RaceName', '.race_name', 'h1.RaceMainTitle', '.RaceMainTitle']:
+                el = soup.select_one(sel)
+                if el:
+                    race_name = el.get_text(strip=True)
+                    break
+            # CSSで取れなければタイトルから抽出
+            if not race_name:
+                m = re.match(r'^([^\d｜|（(]+?)(?:\s*[\(（]G[123][\)）])?\s*(?:\d|｜|\||結果|出走)', title_text.strip())
+                if m:
+                    race_name = m.group(1).strip()
+            # グレード抽出
+            gm = re.search(r'[\(（](G[123])[\)）]', title_text)
+            if gm:
+                grade = gm.group(1)
 
             session.headers.update({'Referer': url})
 
@@ -231,6 +253,8 @@ def fetch_race_rows(race_id: str) -> list:
 
                 rows.append({
                     'race_id':    race_id,
+                    'race_name':  race_name,
+                    'grade':      grade,
                     '着順':       finish_rank,
                     '枠番':       get(1),
                     '馬番':       get(2),

@@ -1,0 +1,57 @@
+name: Fetch History Bulk (2015-2023)
+
+on:
+  workflow_dispatch:
+    inputs:
+      year_start:
+        description: '取得開始年 (例: 2015)'
+        required: true
+        default: '2015'
+        type: string
+      year_end:
+        description: '取得終了年 (例: 2023)'
+        required: true
+        default: '2023'
+        type: string
+
+jobs:
+  fetch-bulk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install requests beautifulsoup4
+
+      - name: Fetch historical data
+        run: |
+          START=${{ github.event.inputs.year_start }}
+          END=${{ github.event.inputs.year_end }}
+          echo "取得範囲: ${START}年〜${END}年"
+          for year in $(seq $START $END); do
+            for month in $(seq 1 12); do
+              echo "===== ${year}年${month}月 ====="
+              python fetch_history.py --year $year --month $month || true
+              sleep 5
+            done
+            # 年をまたぐ際に少し長めに待機
+            sleep 30
+          done
+
+      - name: Commit and push
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/raceresults_*.csv
+          if git diff --staged --quiet; then
+            echo "変更なし"
+          else
+            git commit -m "data: fetch history bulk ${{ github.event.inputs.year_start }}-${{ github.event.inputs.year_end }} [skip ci]"
+            git push
+          fi

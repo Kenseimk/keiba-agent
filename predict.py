@@ -15,12 +15,13 @@ R02,サクラバクシンオー,16.0,8,川田,470(-4)
 ※ race_id が同じ行が同一レース（複数レース可）
 ※ 馬体重は省略可（穴馬スコアに影響なし）
 """
-import sys, io, csv, argparse, os
+import sys, io, csv, argparse, os, re
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from strategy import (ANA_PARAMS, FUKUSHO_PARAMS,
                       ana_candidates, fukusho_candidates, build_prev_history,
                       graded_race_analysis, split_by_grade)
+from race_specific import race_specific_analysis, print_race_specific
 from collections import defaultdict
 
 # ══════════════════════════════════════════════════════════
@@ -157,16 +158,25 @@ def main():
 
         for race_id, (grade, horses) in graded_races.items():
             race_label = race_id.split('_', 2)[-1] if '_' in race_id else race_id
+            # レース名（グレード表記を除く）
+            race_name_clean = re.sub(r'[\(（]G[123][\)）]', '', race_label).strip()
             print(f'\n  [{grade}] {race_label}  {len(horses)}頭立て')
-            cands = graded_race_analysis(horses, grade, prev_history)
-            if not cands:
-                print('    → 対象候補なし')
-                continue
-            fav_odds = min(h['odds'] for h in horses)
-            print(f'    1番人気オッズ: {fav_odds:.1f}倍')
-            for c in cands[:5]:
-                f3_str = f"前走上がり{c['prev_f3rank']}位/{c['prev_finish']}着" if c['prev_f3rank'] else '前走データなし'
-                print(f"    {c['pop']:2d}番人気 {c['odds']:5.1f}倍  {c['name']}  複勝確率{c['prob']:.1f}%  {f3_str}")
+
+            # レース特化分析（過去データがあれば）
+            specific = race_specific_analysis(race_name_clean, horses, prev_history, args.data)
+            if not specific['no_data']:
+                print_race_specific(specific, grade=grade, top_n=5)
+            else:
+                # 過去データ不足時は汎用グレード分析にフォールバック
+                cands = graded_race_analysis(horses, grade, prev_history)
+                if not cands:
+                    print('    → 対象候補なし')
+                else:
+                    fav_odds = min(h['odds'] for h in horses)
+                    print(f'  ⚠️  過去特化データなし（汎用分析）  1番人気: {fav_odds:.1f}倍')
+                    for c in cands[:5]:
+                        f3_str = f"前走上がり{c['prev_f3rank']}位/{c['prev_finish']}着" if c['prev_f3rank'] else '前走データなし'
+                        print(f"    {c['pop']:2d}番人気 {c['odds']:5.1f}倍  {c['name']}  複勝確率{c['prob']:.1f}%  {f3_str}")
 
     # ══════════════════════════════════════════════════════
     # 合計
