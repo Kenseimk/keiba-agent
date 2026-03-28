@@ -44,7 +44,7 @@ jobs:
             sleep 30
           done
 
-      - name: Commit and push
+      - name: Commit raw data
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
@@ -53,6 +53,20 @@ jobs:
             echo "変更なし"
           else
             git commit -m "data: fetch history bulk ${{ github.event.inputs.year_start }}-${{ github.event.inputs.year_end }} [skip ci]"
+            git pull --rebase origin main
+            git push
+          fi
+
+      - name: Backfill race names
+        run: python backfill_race_names.py
+
+      - name: Commit backfilled data
+        run: |
+          git add data/raceresults_*.csv
+          if git diff --staged --quiet; then
+            echo "バックフィル変更なし"
+          else
+            git commit -m "data: backfill race names ${{ github.event.inputs.year_start }}-${{ github.event.inputs.year_end }} [skip ci]"
             git pull --rebase origin main
             git push
           fi
