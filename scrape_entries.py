@@ -54,25 +54,22 @@ def fetch_kaisai_dates(session, year, month):
 # ── レースID一覧取得 ──────────────────────────────────────
 def fetch_race_ids(session, date_str):
     """指定日のJRAレースID一覧を取得"""
-    url = f'https://race.netkeiba.com/top/race_list.html?kaisai_date={date_str}'
+    url = f'https://race.netkeiba.com/top/race_list_sub.html?kaisai_date={date_str}'
     r = get(session, url)
     if not r: return []
-    soup = BeautifulSoup(r.content, 'html.parser')
+    # race_id=XXXXXXXXXXXX パターンを全文から抽出
     race_ids = []
     seen = set()
-    for a in soup.find_all('a', href=True):
-        m = re.search(r'race_id=(\d{12})', a['href'])
-        if m:
-            rid = m.group(1)
-            venue_code = rid[4:6]
-            if venue_code in JRA_VENUE_CODES and rid not in seen:
-                seen.add(rid)
-                race_ids.append(rid)
+    for rid in re.findall(r'race_id=(\d{12})', r.text):
+        venue_code = rid[4:6]
+        if venue_code in JRA_VENUE_CODES and rid not in seen:
+            seen.add(rid)
+            race_ids.append(rid)
     return sorted(race_ids)
 
 # ── 出馬表取得 ────────────────────────────────────────────
 def fetch_shutuba(session, race_id):
-    """出馬表（馬名・騎手・馬番）を取得"""
+    """出馬表（馬名・騎手・馬番・オッズ・人気）を取得"""
     url = f'https://race.netkeiba.com/race/shutuba.html?race_id={race_id}'
     r = get(session, url)
     if not r: return [], ''
@@ -116,68 +113,83 @@ def fetch_shutuba(session, race_id):
                 jockey = jockey_a.get_text(strip=True)
             # 馬体重（当日公表）
             weight = ''
-            for td in reversed(tds):
+            weight_idx = -1
+            for i, td in enumerate(reversed(tds)):
                 t = td.get_text(strip=True)
                 if re.match(r'\d{3}\([+-]?\d+\)', t):
                     weight = t
+                    weight_idx = len(tds) - 1 - i
                     break
+            # 単勝オッズ・人気（馬体重の後ろの列に入っていることがある）
+            shutuba_odds = ''
+            shutuba_pop  = ''
+            if weight_idx >= 0:
+                for td in tds[weight_idx + 1:]:
+                    t = td.get_text(strip=True)
+                    if re.match(r'^\d+\.\d+$', t) and not shutuba_odds:
+                        shutuba_odds = t
+                    elif re.match(r'^\d{1,2}$', t) and not shutuba_pop:
+                        shutuba_pop = t
             if name:
                 horses.append({
-                    'umaban': umaban,
-                    'name': name,
-                    'jockey': jockey,
-                    'weight': weight,
+                    'umaban':       umaban,
+                    'name':         name,
+                    'jockey':       jockey,
+                    'weight':       weight,
+                    'shutuba_odds': shutuba_odds,
+                    'shutuba_pop':  shutuba_pop,
                 })
     return horses, race_name
 
 # ── オッズ取得 ────────────────────────────────────────────
 def fetch_odds(session, race_id):
-    """単勝オッズ・人気を取得 → {馬名: (odds, pop)}"""
-    url = f'https://race.netkeiba.com/odds/index.html?race_id={race_id}&type=b1'
-    r = get(session, url)
-    if not r: return {}
-    soup = BeautifulSoup(r.content, 'html.parser')
+    """単勝オッズ・人気を取得 → {馬番(str): (odds, pop)}
 
+    netkeiba の内部 JSON API を使用。
+    API: /api/api_get_jra_odds.html?race_id=...&type=1&action=update
+    レスポンス: {"data": {"odds": {"1": {"01": [オッズ, "", 人気], ...}}}}
+    キーは 馬番 (ゼロ埋め2桁) → int 文字列に正規化して返す
+    """
+    api_url = (
+        f'https://race.netkeiba.com/api/api_get_jra_odds.html'
+        f'?race_id={race_id}&type=1&action=update'
+    )
+    r = get(session, api_url, headers={
+        'Referer': f'https://race.netkeiba.com/odds/index.html?race_id={race_id}&type=b1',
+        'Accept':  'application/json',
+    })
+    if not r:
+        return {}
+
+    try:
+        data = r.json()
+    except Exception as e:
+        print(f'  [WARN] オッズJSON解析失敗: {e}')
+        return {}
+
+    odds_raw = data.get('data', {})
+    if not isinstance(odds_raw, dict):
+        return {}
+
+    # odds['1'] = 単勝, odds['3'] = 複勝
+    tan_odds = odds_raw.get('odds', {}).get('1', {})
+    if not tan_odds:
+        return {}
+
+    # {馬番文字列(1〜18): (odds_float, pop_int)} に変換
+    # API側キーは "01","02" など2桁ゼロ埋め
     odds_map = {}
-    # 人気順テーブルからパース
-    for row in soup.find_all('tr'):
-        tds = row.find_all('td')
-        if len(tds) < 3: continue
-        # 馬名リンク
-        name_a = row.find('a', href=re.compile(r'/horse/|shutuba'))
-        if not name_a: continue
-        name = name_a.get_text(strip=True)
-        # オッズ（数値XX.X形式）
-        odds_val = None
-        pop_val  = None
-        for i, td in enumerate(tds):
-            t = td.get_text(strip=True)
-            if re.match(r'^\d+\.\d$', t) and odds_val is None:
-                try: odds_val = float(t)
-                except: pass
-            if re.match(r'^\d{1,2}$', t) and pop_val is None and i == 0:
-                try: pop_val = int(t)
-                except: pass
-        if name and odds_val:
-            odds_map[name] = (odds_val, pop_val or 99)
-
-    # フォールバック: 人気順に並んでいる場合
-    if not odds_map:
-        pop = 1
-        for row in soup.find_all('tr'):
-            tds = row.find_all('td')
-            if len(tds) < 2: continue
-            name_a = row.find('a', href=re.compile(r'/horse/'))
-            if not name_a: continue
-            name = name_a.get_text(strip=True)
-            for td in tds:
-                t = td.get_text(strip=True)
-                if re.match(r'^\d+\.\d$', t):
-                    try:
-                        odds_map[name] = (float(t), pop)
-                        pop += 1
-                    except: pass
-                    break
+    for umaban_str, vals in tan_odds.items():
+        if not isinstance(vals, list) or len(vals) < 3:
+            continue
+        try:
+            odds_val = float(vals[0])
+            pop_val  = int(vals[2]) if vals[2] else 99
+            # キーを 1〜18 の整数文字列に正規化
+            key = str(int(umaban_str))
+            odds_map[key] = (odds_val, pop_val)
+        except Exception:
+            continue
 
     return odds_map
 
@@ -239,13 +251,17 @@ def main():
             race_meta[race_id] = race_label
 
             for h in horses:
-                name = h['name']
-                odds_info = odds_map.get(name, (None, None))
+                name   = h['name']
+                # API は馬番キー。shutuba のフォールバックも考慮
+                umaban_key = str(int(h['umaban'])) if h['umaban'].isdigit() else h['umaban']
+                odds_info  = odds_map.get(umaban_key, (None, None))
+                final_odds = odds_info[0] if odds_info[0] is not None else h.get('shutuba_odds') or ''
+                final_pop  = odds_info[1] if odds_info[1] is not None else h.get('shutuba_pop')  or ''
                 all_rows.append({
                     'race_id':    race_label,
                     '馬名':        name,
-                    '単勝オッズ':  odds_info[0] or '',
-                    '人気':        odds_info[1] or '',
+                    '単勝オッズ':  final_odds,
+                    '人気':        final_pop,
                     '騎手':        h['jockey'],
                     '馬体重':      h['weight'],
                     '馬番':        h['umaban'],
