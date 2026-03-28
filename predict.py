@@ -16,7 +16,8 @@ R02,サクラバクシンオー,16.0,8,川田,470(-4)
 ※ 馬体重は省略可（穴馬スコアに影響なし）
 """
 import sys, io, csv, argparse, math, re, os
-sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', line_buffering=True)
+if sys.platform == 'win32':
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', line_buffering=True)
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from backtest_core import (
