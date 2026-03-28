@@ -1,0 +1,174 @@
+{
+  "ana": {
+    "best_params": {
+      "odds_min": 10,
+      "odds_max": 30,
+      "prob_min": 25.0,
+      "count_max": 15,
+      "field_min": 8,
+      "pop_min": 4,
+      "pop_max": 18,
+      "kelly_tiers": [
+        [
+          35,
+          0.03,
+          20000
+        ],
+        [
+          30,
+          0.02,
+          15000
+        ],
+        [
+          0,
+          0.015,
+          8000
+        ]
+      ]
+    },
+    "best_metrics": null,
+    "history": []
+  },
+  "fukusho": {
+    "best_params": {
+      "prev_f3rank_max": 1,
+      "prev_finish_min": 6,
+      "prev_field_min": 8,
+      "odds_min": 12.0,
+      "odds_max": 18.0,
+      "pop_min": 5,
+      "pop_max": 12,
+      "field_min": 8,
+      "count_max": 15,
+      "kelly_pct": 0.02,
+      "kelly_max": 12000
+    },
+    "best_metrics": {
+      "roi": 111.98,
+      "invest": 653100,
+      "ret": 731330,
+      "profit": 78230,
+      "count": 89,
+      "hit": 27,
+      "hit_rate": 30.34,
+      "red_months": 11,
+      "worst_month_roi": 0.0,
+      "best_month_roi": 336.7,
+      "final_capital": 779530
+    },
+    "history": [
+      {
+        "timestamp": "2026-03-28T03:10:25.426086",
+        "proposal": {
+          "param": "odds_max",
+          "old_value": 18.0,
+          "new_value": 17.0,
+          "rationale": "複勝で18倍超は当選確率が極めて低い。確度高い12-17倍帯に集中することで着率向上。ROI維持しつつ月間安定性を改善。",
+          "expected_roi_change": "+2%"
+        },
+        "new_params": {
+          "prev_f3rank_max": 1,
+          "prev_finish_min": 6,
+          "prev_field_min": 8,
+          "odds_min": 12.0,
+          "odds_max": 17.0,
+          "pop_min": 5,
+          "pop_max": 12,
+          "field_min": 8,
+          "count_max": 15,
+          "kelly_pct": 0.02,
+          "kelly_max": 12000
+        },
+        "old_metrics": {
+          "roi": 111.98,
+          "invest": 653100,
+          "ret": 731330,
+          "profit": 78230,
+          "count": 89,
+          "hit": 27,
+          "hit_rate": 30.34,
+          "red_months": 11,
+          "worst_month_roi": 0.0,
+          "best_month_roi": 336.7,
+          "final_capital": 779530
+        },
+        "result_metrics": {
+          "roi": 117.01,
+          "invest": 541000,
+          "ret": 633010,
+          "profit": 92010,
+          "count": 69,
+          "hit": 23,
+          "hit_rate": 33.33,
+          "red_months": 11,
+          "worst_month_roi": 0.0,
+          "best_month_roi": 440.0,
+          "final_capital": 807210
+        },
+        "rebuttal": {
+          "verdict": "reject",
+          "risk_score": 4,
+          "criticism": "ベット数が22.5%減少（89→69件）し統計的信頼性が低下。ROI改善がEV期待値を2.5倍超過し、過学習の強い兆候。オッズ上限引き下げはEVプラス帯境界の改変で高リスク。",
+          "counter_suggestion": "オッズ上限を17.5に設定し、ベット数90件超を維持できるパラメータ探索。複数月の未見テストセットでの独立検証を必須化。的中率向上の持続性を確認後に採用検討。"
+        },
+        "verdict": "reject"
+      },
+      {
+        "timestamp": "2026-03-28T03:12:30.214641",
+        "proposal": {
+          "param": "pop_min",
+          "old_value": 5,
+          "new_value": 6,
+          "rationale": "市場人気5位は実質的に適正評価。6位以上に絞ることで過小評価馬へ集中。サンプル損失最小。",
+          "expected_roi_change": "+2%"
+        },
+        "new_params": {
+          "prev_f3rank_max": 1,
+          "prev_finish_min": 6,
+          "prev_field_min": 8,
+          "odds_min": 12.0,
+          "odds_max": 18.0,
+          "pop_min": 6,
+          "pop_max": 12,
+          "field_min": 8,
+          "count_max": 15,
+          "kelly_pct": 0.02,
+          "kelly_max": 12000
+        },
+        "old_metrics": {
+          "roi": 111.98,
+          "invest": 653100,
+          "ret": 731330,
+          "profit": 78230,
+          "count": 89,
+          "hit": 27,
+          "hit_rate": 30.34,
+          "red_months": 11,
+          "worst_month_roi": 0.0,
+          "best_month_roi": 336.7,
+          "final_capital": 779530
+        },
+        "result_metrics": {
+          "roi": 117.45,
+          "invest": 517300,
+          "ret": 607560,
+          "profit": 90260,
+          "count": 68,
+          "hit": 20,
+          "hit_rate": 29.41,
+          "red_months": 11,
+          "worst_month_roi": 0.0,
+          "best_month_roi": 445.0,
+          "final_capital": 820260
+        },
+        "rebuttal": {
+          "verdict": "reject",
+          "risk_score": 4,
+          "criticism": "的中率低下とROI上昇が矛盾。サンプル削減（-21件）は統計的安定性低下。期待+2%vs実現+5.5%はオーバーフィット疑い。",
+          "counter_suggestion": "段階的調整（pop_min=5.5等）+OOS検証、または異なる期間データでの再検証。確信度不足。"
+        },
+        "verdict": "reject"
+      }
+    ]
+  }
+}

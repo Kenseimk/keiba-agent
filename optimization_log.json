@@ -1,0 +1,474 @@
+{
+  "ana": {
+    "best_params": {
+      "odds_min": 10,
+      "odds_max": 30,
+      "prob_min": 25.0,
+      "count_max": 15,
+      "field_min": 8,
+      "pop_min": 4,
+      "pop_max": 18,
+      "kelly_tiers": [
+        [
+          35,
+          0.03,
+          20000
+        ],
+        [
+          30,
+          0.02,
+          15000
+        ],
+        [
+          0,
+          0.015,
+          8000
+        ]
+      ]
+    },
+    "best_metrics": {
+      "roi": 128.6,
+      "invest": 2423900,
+      "ret": 3117090,
+      "profit": 693190,
+      "count": 340,
+      "hit": 129,
+      "hit_rate": 37.94,
+      "red_months": 10,
+      "worst_month_roi": 54.7,
+      "best_month_roi": 208.3,
+      "final_capital": 1903290
+    },
+    "history": [
+      {
+        "timestamp": "2026-03-28T02:07:21.194890",
+        "proposal": {
+          "param": "kelly_tiers[0][1]",
+          "old_value": 0.03,
+          "new_value": 0.035,
+          "rationale": "的中率37.9%で高確実。確率35%以上層のKelly係数上昇で利益最大化。最悪月ROI54.7%でリスク許容内",
+          "expected_roi_change": "+4%"
+        },
+        "new_params": {
+          "odds_min": 10,
+          "odds_max": 30,
+          "prob_min": 25.0,
+          "count_max": 15,
+          "field_min": 8,
+          "pop_min": 4,
+          "pop_max": 18,
+          "kelly_tiers": [
+            [
+              35,
+              0.03,
+              20000
+            ],
+            [
+              30,
+              0.02,
+              15000
+            ],
+            [
+              0,
+              0.015,
+              8000
+            ]
+          ]
+        },
+        "old_metrics": {
+          "roi": 128.6,
+          "invest": 2423900,
+          "ret": 3117090,
+          "profit": 693190,
+          "count": 340,
+          "hit": 129,
+          "hit_rate": 37.94,
+          "red_months": 10,
+          "worst_month_roi": 54.7,
+          "best_month_roi": 208.3,
+          "final_capital": 1903290
+        },
+        "result_metrics": {
+          "roi": 128.6,
+          "invest": 2423900,
+          "ret": 3117090,
+          "profit": 693190,
+          "count": 340,
+          "hit": 129,
+          "hit_rate": 37.94,
+          "red_months": 10,
+          "worst_month_roi": 54.7,
+          "best_month_roi": 208.3,
+          "final_capital": 1903290
+        },
+        "rebuttal": {
+          "verdict": "reject",
+          "risk_score": 4,
+          "criticism": "期待+4%が実績+0%。赤字月43%下でのKelly係数上昇は危険。効果なし",
+          "counter_suggestion": "赤字月を43%→30%以下に改善してからKelly上昇検討。バックテスト期間を拡張し信頼度向上"
+        },
+        "verdict": "reject"
+      },
+      {
+        "timestamp": "2026-03-28T02:09:46.734101",
+        "proposal": {
+          "param": "kelly_tiers[0][0]",
+          "old_value": 35,
+          "new_value": 34,
+          "rationale": "的中率37.9%を踏まえ、確度34%でも勝率十分。高配分馬増加でROI改善",
+          "expected_roi_change": "+1.5%"
+        },
+        "new_params": {
+          "odds_min": 10,
+          "odds_max": 30,
+          "prob_min": 25.0,
+          "count_max": 15,
+          "field_min": 8,
+          "pop_min": 4,
+          "pop_max": 18,
+          "kelly_tiers": [
+            [
+              35,
+              0.03,
+              20000
+            ],
+            [
+              30,
+              0.02,
+              15000
+            ],
+            [
+              0,
+              0.015,
+              8000
+            ]
+          ]
+        },
+        "old_metrics": {
+          "roi": 128.6,
+          "invest": 2423900,
+          "ret": 3117090,
+          "profit": 693190,
+          "count": 340,
+          "hit": 129,
+          "hit_rate": 37.94,
+          "red_months": 10,
+          "worst_month_roi": 54.7,
+          "best_month_roi": 208.3,
+          "final_capital": 1903290
+        },
+        "result_metrics": {
+          "roi": 128.6,
+          "invest": 2423900,
+          "ret": 3117090,
+          "profit": 693190,
+          "count": 340,
+          "hit": 129,
+          "hit_rate": 37.94,
+          "red_months": 10,
+          "worst_month_roi": 54.7,
+          "best_month_roi": 208.3,
+          "final_capital": 1903290
+        },
+        "rebuttal": {
+          "verdict": "reject",
+          "risk_score": 4,
+          "criticism": "期待+1.5%に対し実現+0.0%。ROI改善ゼロは誤差範囲で採用価値なし。確度低下で的中率不変は低信頼度ベット増加を示唆し、リスク増加のみ。",
+          "counter_suggestion": "確度別（30-35%帯）の実勝率を詳細分析。月別ROIで季節性確認。現状維持が最適。パラメータ感度分析は±0.5で実施し、統計的有意性を確認後。"
+        },
+        "verdict": "reject"
+      },
+      {
+        "timestamp": "2026-03-28T02:12:03.041431",
+        "proposal": {
+          "param": "prob_min",
+          "old_value": 25.0,
+          "new_value": 26.0,
+          "rationale": "赤字月が10/23（43%）と多い。モデル確度25-26%帯のベットが不安定。閾値を1ポイント上げ、より高信頼度馬のみ投資。的中率向上と赤字月削減が期待できる。",
+          "expected_roi_change": "+0~+2%"
+        },
+        "new_params": {
+          "odds_min": 10,
+          "odds_max": 30,
+          "prob_min": 26.0,
+          "count_max": 15,
+          "field_min": 8,
+          "pop_min": 4,
+          "pop_max": 18,
+          "kelly_tiers": [
+            [
+              35,
+              0.03,
+              20000
+            ],
+            [
+              30,
+              0.02,
+              15000
+            ],
+            [
+              0,
+              0.015,
+              8000
+            ]
+          ]
+        },
+        "old_metrics": {
+          "roi": 128.6,
+          "invest": 2423900,
+          "ret": 3117090,
+          "profit": 693190,
+          "count": 340,
+          "hit": 129,
+          "hit_rate": 37.94,
+          "red_months": 10,
+          "worst_month_roi": 54.7,
+          "best_month_roi": 208.3,
+          "final_capital": 1903290
+        },
+        "result_metrics": {
+          "roi": 128.6,
+          "invest": 2423900,
+          "ret": 3117090,
+          "profit": 693190,
+          "count": 340,
+          "hit": 129,
+          "hit_rate": 37.94,
+          "red_months": 10,
+          "worst_month_roi": 54.7,
+          "best_month_roi": 208.3,
+          "final_capital": 1903290
+        },
+        "rebuttal": {
+          "verdict": "reject",
+          "risk_score": 4,
+          "criticism": "パラメータ変更後も全指標が不変。1ポイント上げは母集団への影響が微小すぎる。赤字月削減という目的が全く達成されていない。",
+          "counter_suggestion": "まず除外馬件数を確認。赤字月削減なら prob_min を 27-28 に大きく変更してサンプル数減少と効果を天秤に掛けるか、別パラメータ（期待値ボーダーなど）で精査を。"
+        },
+        "verdict": "reject"
+      }
+    ]
+  },
+  "fukusho": {
+    "best_params": {
+      "score_threshold": 0.55,
+      "odds_min": 4.0,
+      "odds_max": 15.0,
+      "count_max": 8,
+      "field_min": 8,
+      "pop_min": 2,
+      "pop_max": 8,
+      "kelly_pct": 0.025,
+      "kelly_max": 15000,
+      "weights": {
+        "market": 0.27,
+        "f3rank": 0.23,
+        "jockey": 0.18,
+        "prev_rank": 0.13,
+        "weight_chg": 0.09,
+        "corner": 0.1
+      }
+    },
+    "best_metrics": {
+      "roi": 91.72,
+      "invest": 1186400,
+      "ret": 1088110,
+      "profit": -98290,
+      "count": 184,
+      "hit": 87,
+      "hit_rate": 47.28,
+      "red_months": 13,
+      "worst_month_roi": 37.5,
+      "best_month_roi": 151.2,
+      "final_capital": 505310
+    },
+    "history": [
+      {
+        "timestamp": "2026-03-28T02:08:04.715213",
+        "proposal": {
+          "param": "score_threshold",
+          "old_value": 0.55,
+          "new_value": 0.6,
+          "rationale": "赤字月が13/23(57%)で極度に不安定。高スコア馬のみに限定し月単位の勝率向上。ベット数減少で外れ購入削減。",
+          "expected_roi_change": "-4%"
+        },
+        "new_params": {
+          "score_threshold": 0.6,
+          "odds_min": 4.0,
+          "odds_max": 15.0,
+          "count_max": 8,
+          "field_min": 8,
+          "pop_min": 2,
+          "pop_max": 8,
+          "kelly_pct": 0.025,
+          "kelly_max": 15000,
+          "weights": {
+            "market": 0.27,
+            "f3rank": 0.23,
+            "jockey": 0.18,
+            "prev_rank": 0.13,
+            "weight_chg": 0.09,
+            "corner": 0.1
+          }
+        },
+        "old_metrics": {
+          "roi": 91.72,
+          "invest": 1186400,
+          "ret": 1088110,
+          "profit": -98290,
+          "count": 184,
+          "hit": 87,
+          "hit_rate": 47.28,
+          "red_months": 13,
+          "worst_month_roi": 37.5,
+          "best_month_roi": 151.2,
+          "final_capital": 505310
+        },
+        "result_metrics": {
+          "roi": 91.67,
+          "invest": 1182000,
+          "ret": 1083490,
+          "profit": -98510,
+          "count": 182,
+          "hit": 86,
+          "hit_rate": 47.25,
+          "red_months": 13,
+          "worst_month_roi": 36.7,
+          "best_month_roi": 151.2,
+          "final_capital": 505090
+        },
+        "rebuttal": {
+          "verdict": "reject",
+          "risk_score": 4,
+          "criticism": "赤字月13/23は不変で主目的未達成。ROI改善なし（期待-4%だが実績±0%）。的中率も低下。パラメータ最適化による過学習リスク高。",
+          "counter_suggestion": "赤字月の根本原因分析が必須。馬場・季節・条件別に成績を分解し、score_threshold単純調整ではなく多次元フィルタリングを検討すべき。"
+        },
+        "verdict": "reject"
+      },
+      {
+        "timestamp": "2026-03-28T02:11:15.818076",
+        "proposal": {
+          "param": "weights.market",
+          "old_value": 0.27,
+          "new_value": 0.23,
+          "rationale": "市場評価は最高比重(0.27)で変動性大。前走着順を0.13→0.17へシフト。形判定強化し月間安定性向上期待。",
+          "expected_roi_change": "+3%"
+        },
+        "new_params": {
+          "score_threshold": 0.55,
+          "odds_min": 4.0,
+          "odds_max": 15.0,
+          "count_max": 8,
+          "field_min": 8,
+          "pop_min": 2,
+          "pop_max": 8,
+          "kelly_pct": 0.025,
+          "kelly_max": 15000,
+          "weights": {
+            "market": 0.2396,
+            "f3rank": 0.2396,
+            "jockey": 0.1875,
+            "prev_rank": 0.1354,
+            "weight_chg": 0.0938,
+            "corner": 0.1042
+          }
+        },
+        "old_metrics": {
+          "roi": 91.72,
+          "invest": 1186400,
+          "ret": 1088110,
+          "profit": -98290,
+          "count": 184,
+          "hit": 87,
+          "hit_rate": 47.28,
+          "red_months": 13,
+          "worst_month_roi": 37.5,
+          "best_month_roi": 151.2,
+          "final_capital": 505310
+        },
+        "result_metrics": {
+          "roi": 88.26,
+          "invest": 1177600,
+          "ret": 1039350,
+          "profit": -138250,
+          "count": 184,
+          "hit": 85,
+          "hit_rate": 46.2,
+          "red_months": 14,
+          "worst_month_roi": 37.5,
+          "best_month_roi": 151.2,
+          "final_capital": 467250
+        },
+        "rebuttal": {
+          "verdict": "reject",
+          "risk_score": 5,
+          "criticism": "期待値(+3%)と実績(-3.5%)が大幅乖離。赤字月増加(13→14)、的中率低下で安定性悪化。過学習リスク高。",
+          "counter_suggestion": "変更見送り。weights調整前に、市場評価・前走着順の個別効果分析を実施。段階的微調整(±0.02)で再検証。"
+        },
+        "verdict": "reject"
+      },
+      {
+        "timestamp": "2026-03-28T02:13:10.678467",
+        "proposal": {
+          "param": "weights.corner",
+          "old_value": 0.1,
+          "new_value": 0.13,
+          "rationale": "実走性能重視で安定性向上。weight_chgを0.06に調整。赤字月削減と月間ばらつき低減が期待される",
+          "expected_roi_change": "+2.0%"
+        },
+        "new_params": {
+          "score_threshold": 0.55,
+          "odds_min": 4.0,
+          "odds_max": 15.0,
+          "count_max": 8,
+          "field_min": 8,
+          "pop_min": 2,
+          "pop_max": 8,
+          "kelly_pct": 0.025,
+          "kelly_max": 15000,
+          "weights": {
+            "market": 0.2621,
+            "f3rank": 0.2233,
+            "jockey": 0.1748,
+            "prev_rank": 0.1262,
+            "weight_chg": 0.0874,
+            "corner": 0.1262
+          }
+        },
+        "old_metrics": {
+          "roi": 91.72,
+          "invest": 1186400,
+          "ret": 1088110,
+          "profit": -98290,
+          "count": 184,
+          "hit": 87,
+          "hit_rate": 47.28,
+          "red_months": 13,
+          "worst_month_roi": 37.5,
+          "best_month_roi": 151.2,
+          "final_capital": 505310
+        },
+        "result_metrics": {
+          "roi": 83.89,
+          "invest": 1128800,
+          "ret": 946960,
+          "profit": -181840,
+          "count": 184,
+          "hit": 82,
+          "hit_rate": 44.57,
+          "red_months": 14,
+          "worst_month_roi": 22.5,
+          "best_month_roi": 151.2,
+          "final_capital": 419960
+        },
+        "rebuttal": {
+          "verdict": "reject",
+          "risk_score": 5,
+          "criticism": "期待値+2.0%に対し実績-7.8%で大幅悪化。赤字月13→14に増加。cornerウェイト引き上げが逆効果、過学習またはパラメータ設定の根拠不足。",
+          "counter_suggestion": "cornerウェイト引き上げを中止。赤字月を生む要因分析（weight_chg=0.06の妥当性、他パラメータとの相互作用）を優先。小幅試行（0.01刻み段階検証）で因果関係を確認してから採用。"
+        },
+        "verdict": "reject"
+      }
+    ]
+  }
+}

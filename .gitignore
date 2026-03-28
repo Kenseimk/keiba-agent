@@ -1,0 +1,12 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Claude Code 内部ファイル
+.claude/
+
+# テスト出力・一時ファイル
+predict_input_0328.csv
+predict_out.txt
+*.tmp
