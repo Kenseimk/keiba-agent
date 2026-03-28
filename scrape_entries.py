@@ -27,6 +27,16 @@ JRA_VENUE_CODES = {'01','02','03','04','05','06','07','08','09','10'}
 def sleep(lo=1.5, hi=3.0):
     time.sleep(random.uniform(lo, hi))
 
+def notify_discord(message):
+    """環境変数 DISCORD_WEBHOOK_URL に途中経過を送信"""
+    webhook_url = os.environ.get('DISCORD_WEBHOOK_URL', '')
+    if not webhook_url:
+        return
+    try:
+        requests.post(webhook_url, json={'content': message}, timeout=10)
+    except Exception as e:
+        print(f'  [WARN] Discord通知失敗: {e}')
+
 def get(session, url, **kw):
     for attempt in range(3):
         try:
@@ -252,7 +262,12 @@ def main():
 
             # 8レースごとに60秒休憩（レート制限リセット待ち）
             if odds_call_count > 0 and odds_call_count % 8 == 0:
+                msg = (
+                    f'⏳ **スクレイピング途中経過** ({date_str})\n'
+                    f'　{odds_call_count}/{len(race_ids)}レース 取得済み → レート制限対策で60秒待機中...'
+                )
                 print(f'\n  [レート制限対策] {odds_call_count}件処理済み → 60秒待機中...', flush=True)
+                notify_discord(msg)
                 time.sleep(60)
 
             odds_map = fetch_odds(session, race_id)
@@ -297,7 +312,16 @@ def main():
         for row in all_rows:
             writer.writerow(row)
 
-    print(f'\n✅ {args.output} に {len(all_rows)}行出力 ({len(race_meta)}レース)')
+    total_races = len(race_meta)
+    zero_odds = sum(1 for rows in [
+        [r for r in all_rows if r['race_id'] == label] for label in race_meta.values()
+    ] if all(not r['単勝オッズ'] for r in rows))
+    print(f'\n✅ {args.output} に {len(all_rows)}行出力 ({total_races}レース)')
+    notify_discord(
+        f'✅ **スクレイピング完了** ({", ".join(target_dates)})\n'
+        f'　{total_races}レース / {len(all_rows)}頭 取得完了\n'
+        f'　次は予測処理へ...'
+    )
 
 if __name__ == '__main__':
     main()
