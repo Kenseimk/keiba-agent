@@ -34,7 +34,8 @@ MAX_RETRIES     = 3
 SESSION_RESET_INTERVAL = 50
 
 CSV_COLUMNS = [
-    'race_id','race_name','grade','着順','枠番','馬番','馬名','性齢','斤量','騎手',
+    'race_id','race_name','grade','距離','コース','馬場状態',
+    '着順','枠番','馬番','馬名','性齢','斤量','騎手',
     'タイム','着差','通過順','上がり3F','単勝オッズ','人気','馬体重',
     '年','場コード','回次','日次','レース番号',
     '単勝払戻','複勝払戻','馬連払戻','馬単払戻','ワイド払戻','三連複払戻','三連単払戻'
@@ -226,6 +227,30 @@ def fetch_race_rows(race_id: str) -> list:
             if gm:
                 grade = gm.group(1)
 
+            # 距離・コース・馬場状態の抽出
+            # "diary_snap_cut" に "ダ左1400m / 天候 : 晴 / ダート : 良" などが入る
+            dist_text = ''
+            course    = ''
+            track_cond = ''
+            snap = soup.select_one('.mainrace_data') or soup.select_one('.diary_snap_cut')
+            if snap:
+                snap_str = snap.get_text(' ', strip=True)
+                # 距離: "芝右外2000m" "ダ左1400m" "障2900m" など
+                dm = re.search(r'(芝|ダ|障).*?(\d{3,4})m', snap_str)
+                if dm:
+                    surface_char = dm.group(1)
+                    dist_text = dm.group(2)  # "1400"
+                    if surface_char == '芝':
+                        course = '芝'
+                    elif surface_char == 'ダ':
+                        course = 'ダート'
+                    else:
+                        course = '障害'
+                # 馬場状態: "芝 : 良" "ダート : 稍重" など
+                tc = re.search(r'(?:芝|ダート)\s*:\s*(良|稍重|重|不良)', snap_str)
+                if tc:
+                    track_cond = tc.group(1)
+
             session.headers.update({'Referer': url})
 
             # 払戻情報を取得
@@ -255,6 +280,9 @@ def fetch_race_rows(race_id: str) -> list:
                     'race_id':    race_id,
                     'race_name':  race_name,
                     'grade':      grade,
+                    '距離':       dist_text,
+                    'コース':     course,
+                    '馬場状態':   track_cond,
                     '着順':       finish_rank,
                     '枠番':       get(1),
                     '馬番':       get(2),
