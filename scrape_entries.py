@@ -155,25 +155,32 @@ def fetch_odds(session, race_id):
         f'https://race.netkeiba.com/api/api_get_jra_odds.html'
         f'?race_id={race_id}&type=1&action=update'
     )
-    r = get(session, api_url, headers={
+    api_headers = {
         'Referer': f'https://race.netkeiba.com/odds/index.html?race_id={race_id}&type=b1',
         'Accept':  'application/json',
-    })
-    if not r:
-        return {}
+    }
 
-    try:
-        data = r.json()
-    except Exception as e:
-        print(f'  [WARN] オッズJSON解析失敗: {e}')
-        return {}
+    # レート制限対策: 最大3回リトライ（空レスポンス時はウェイトを増やす）
+    tan_odds = {}
+    for attempt in range(3):
+        r = get(session, api_url, headers=api_headers)
+        if not r:
+            break
+        try:
+            data = r.json()
+        except Exception as e:
+            print(f'  [WARN] オッズJSON解析失敗: {e}')
+            break
+        odds_raw = data.get('data', {})
+        if isinstance(odds_raw, dict):
+            tan_odds = odds_raw.get('odds', {}).get('1', {})
+            if tan_odds:
+                break  # 取得成功
+        # 空レスポンス → レート制限の可能性。ウェイトを入れてリトライ
+        wait = 5 * (attempt + 1)
+        print(f'  [WARN] オッズ空レスポンス(attempt={attempt+1}) → {wait}s待機')
+        time.sleep(wait)
 
-    odds_raw = data.get('data', {})
-    if not isinstance(odds_raw, dict):
-        return {}
-
-    # odds['1'] = 単勝, odds['3'] = 複勝
-    tan_odds = odds_raw.get('odds', {}).get('1', {})
     if not tan_odds:
         return {}
 
@@ -243,7 +250,7 @@ def main():
             print(f'{len(horses)}頭', end=' ')
 
             odds_map = fetch_odds(session, race_id)
-            sleep()
+            sleep(2.0, 4.0)  # レート制限対策: やや長めに待機
             print(f'オッズ{len(odds_map)}件')
 
             race_label = f'{date_str}_{race_id[10:12]}R'
