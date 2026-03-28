@@ -24,6 +24,12 @@ HEADERS = {
 
 JRA_VENUE_CODES = {'01','02','03','04','05','06','07','08','09','10'}
 
+VENUE_NAMES = {
+    '01': '札幌', '02': '函館', '03': '福島', '04': '新潟',
+    '05': '東京', '06': '中京', '07': '阪神', '08': '小倉',
+    '09': '中山', '10': '京都',
+}
+
 def sleep(lo=1.5, hi=3.0):
     time.sleep(random.uniform(lo, hi))
 
@@ -275,9 +281,10 @@ def main():
             sleep(4.0, 7.0)  # レート制限対策: 十分に待機
             print(f'オッズ{len(odds_map)}件')
 
-            race_label = f'{date_str}_{race_id[10:12]}R'
+            venue_name = VENUE_NAMES.get(race_id[4:6], race_id[4:6])
+            race_label = f'{date_str}_{venue_name}{race_id[10:12]}R'
             if race_name:
-                race_label = f'{date_str}_{race_id[10:12]}R_{race_name}'
+                race_label = f'{date_str}_{venue_name}{race_id[10:12]}R_{race_name}'
             race_meta[race_id] = race_label
 
             for h in horses:
