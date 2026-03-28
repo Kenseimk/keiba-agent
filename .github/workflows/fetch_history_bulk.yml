@@ -53,5 +53,6 @@ jobs:
             echo "変更なし"
           else
             git commit -m "data: fetch history bulk ${{ github.event.inputs.year_start }}-${{ github.event.inputs.year_end }} [skip ci]"
+            git pull --rebase origin main
             git push
           fi
