@@ -243,14 +243,14 @@ def main():
         for race_id in race_ids:
             print(f'  [{race_id}] 出馬表取得中...', end=' ')
             horses, race_name = fetch_shutuba(session, race_id)
-            sleep()
+            sleep(3.0, 5.0)
             if not horses:
                 print('スキップ（馬なし）')
                 continue
             print(f'{len(horses)}頭', end=' ')
 
             odds_map = fetch_odds(session, race_id)
-            sleep(2.0, 4.0)  # レート制限対策: やや長めに待機
+            sleep(4.0, 7.0)  # レート制限対策: 十分に待機
             print(f'オッズ{len(odds_map)}件')
 
             race_label = f'{date_str}_{race_id[10:12]}R'
