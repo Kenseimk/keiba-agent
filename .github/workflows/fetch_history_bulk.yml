@@ -17,7 +17,20 @@ on:
 jobs:
   fetch-bulk:
     runs-on: ubuntu-latest
-    timeout-minutes: 350
+    timeout-minutes: 120
+    strategy:
+      matrix:
+        year:
+          - 2015
+          - 2016
+          - 2017
+          - 2018
+          - 2019
+          - 2020
+          - 2021
+          - 2022
+          - 2023
+      fail-fast: false
 
     steps:
       - uses: actions/checkout@v4
@@ -29,44 +42,54 @@ jobs:
       - name: Install dependencies
         run: pip install requests beautifulsoup4
 
-      - name: Fetch historical data
+      - name: Fetch historical data (${{ matrix.year }})
         run: |
+          YEAR=${{ matrix.year }}
           START=${{ github.event.inputs.year_start }}
           END=${{ github.event.inputs.year_end }}
-          echo "取得範囲: ${START}年〜${END}年"
-          for year in $(seq $START $END); do
-            for month in $(seq 1 12); do
-              echo "===== ${year}年${month}月 ====="
-              python fetch_history.py --year $year --month $month || true
-              sleep 5
-            done
-            # 年をまたぐ際に少し長めに待機
-            sleep 30
+          # 範囲外の年はスキップ
+          if [ "$YEAR" -lt "$START" ] || [ "$YEAR" -gt "$END" ]; then
+            echo "スキップ: ${YEAR}年 (範囲: ${START}〜${END})"
+            exit 0
+          fi
+          echo "取得開始: ${YEAR}年"
+          for month in $(seq 1 12); do
+            echo "===== ${YEAR}年${month}月 ====="
+            python fetch_history.py --year $YEAR --month $month || true
+            sleep 5
           done
+          echo "取得完了: ${YEAR}年"
 
-      - name: Commit raw data
+      - name: Commit raw data (${{ matrix.year }})
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add data/raceresults_*.csv
+          git add data/raceresults_${{ matrix.year }}*.csv
           if git diff --staged --quiet; then
             echo "変更なし"
           else
-            git commit -m "data: fetch history bulk ${{ github.event.inputs.year_start }}-${{ github.event.inputs.year_end }} [skip ci]"
-            git pull --rebase origin main
-            git push
+            git commit -m "data: fetch history bulk ${{ matrix.year }} [skip ci]"
+            # 競合を避けるためリトライ付きでpush
+            for i in 1 2 3 4 5; do
+              git pull --rebase origin main && \
+              git push origin main && break || \
+              { echo "push失敗 リトライ ${i}/5"; sleep $((i * 10)); }
+            done
           fi
 
-      - name: Backfill race names
-        run: python backfill_race_names.py
+      - name: Backfill course/dist (${{ matrix.year }})
+        run: python backfill_race_names.py --year ${{ matrix.year }} || true
 
-      - name: Commit backfilled data
+      - name: Commit backfilled data (${{ matrix.year }})
         run: |
-          git add data/raceresults_*.csv
+          git add data/raceresults_${{ matrix.year }}*.csv
           if git diff --staged --quiet; then
             echo "バックフィル変更なし"
           else
-            git commit -m "data: backfill race names ${{ github.event.inputs.year_start }}-${{ github.event.inputs.year_end }} [skip ci]"
-            git pull --rebase origin main
-            git push
+            git commit -m "data: backfill race names ${{ matrix.year }} [skip ci]"
+            for i in 1 2 3 4 5; do
+              git pull --rebase origin main && \
+              git push origin main && break || \
+              { echo "push失敗 リトライ ${i}/5"; sleep $((i * 10)); }
+            done
           fi
