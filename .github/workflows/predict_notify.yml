@@ -89,24 +89,17 @@ jobs:
           path: predict_input_am.csv
           retention-days: 1
 
-      - name: 前半完了をDiscordに通知
+      - name: 前半レース予測 & Discord通知
         run: |
-          python3 - << 'PYEOF'
-          import requests, os, csv
-          webhook = os.environ.get('DISCORD_WEBHOOK_URL', '')
-          if not webhook: exit(0)
-          rows = 0
-          try:
-              with open('predict_input_am.csv', encoding='utf-8-sig') as f:
-                  rows = sum(1 for r in csv.DictReader(f) if r.get('単勝オッズ','').strip())
-          except: pass
-          payload = {'embeds': [{'title': '🌅 前半レース取得完了',
-              'description': f'1〜6R: {rows}頭分のオッズ取得\n昼12時に後半(7〜12R)を取得して予測します',
-              'color': 0x3498db}]}
-          requests.post(webhook, json=payload, timeout=10)
-          PYEOF
+          cp predict_input_am.csv predict_input.csv
+          python predict_notify.py \
+            --capital ${{ github.event.inputs.capital || '70000' }} \
+            --input predict_input.csv \
+            --data data \
+            --date ${{ steps.set_date.outputs.target_date }}
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          CURRENT_CAPITAL: ${{ github.event.inputs.capital || '70000' }}
 
       - name: エラー時Discord通知
         if: failure()
@@ -164,52 +157,14 @@ jobs:
         env:
           INPUT_DATE: ${{ github.event.inputs.date }}
 
-      - name: 前半Artifact取得 (なくてもOK)
-        id: dl_am
-        uses: actions/download-artifact@v4
-        with:
-          name: predict-input-am-${{ steps.set_date.outputs.target_date }}
-        continue-on-error: true
-
-      - name: 後半レース取得 (7〜12R / 手動時は全レース)
+      - name: 後半レース取得 (7〜12R)
         run: |
-          if [ -f predict_input_am.csv ]; then
-            echo "前半CSVあり → 7〜12Rのみ取得"
-            python scrape_entries.py \
-              --date ${{ steps.set_date.outputs.target_date }} \
-              --race-min 7 \
-              --output predict_input_pm.csv
-          else
-            echo "前半CSVなし → 全レース取得"
-            python scrape_entries.py \
-              --date ${{ steps.set_date.outputs.target_date }} \
-              --output predict_input_pm.csv
-          fi
+          python scrape_entries.py \
+            --date ${{ steps.set_date.outputs.target_date }} \
+            --race-min 7 \
+            --output predict_input.csv
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
-
-      - name: CSV結合
-        run: |
-          python3 - << 'PYEOF'
-          import csv, os
-          rows = []
-          header = None
-          for fname in ['predict_input_am.csv', 'predict_input_pm.csv']:
-              if not os.path.exists(fname):
-                  continue
-              with open(fname, encoding='utf-8-sig') as f:
-                  r = csv.DictReader(f)
-                  if header is None:
-                      header = r.fieldnames
-                  for row in r:
-                      if row.get('単勝オッズ', '').strip():
-                          rows.append(row)
-          with open('predict_input.csv', 'w', encoding='utf-8-sig', newline='') as f:
-              w = csv.DictWriter(f, fieldnames=header)
-              w.writeheader()
-              w.writerows(rows)
-          print(f'結合完了: {len(rows)}行 ({len(set(r["race_id"] for r in rows))}レース)')
-          PYEOF
 
       - name: レースなし判定
         id: check_rows
