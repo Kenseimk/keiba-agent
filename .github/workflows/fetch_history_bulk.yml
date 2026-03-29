@@ -17,7 +17,7 @@ on:
 jobs:
   fetch-bulk:
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    timeout-minutes: 350
     strategy:
       matrix:
         year:
@@ -42,40 +42,42 @@ jobs:
       - name: Install dependencies
         run: pip install requests beautifulsoup4
 
-      - name: Fetch historical data (${{ matrix.year }})
+      - name: Git設定
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Fetch & commit per month (${{ matrix.year }})
         run: |
           YEAR=${{ matrix.year }}
           START=${{ github.event.inputs.year_start }}
           END=${{ github.event.inputs.year_end }}
-          # 範囲外の年はスキップ
           if [ "$YEAR" -lt "$START" ] || [ "$YEAR" -gt "$END" ]; then
             echo "スキップ: ${YEAR}年 (範囲: ${START}〜${END})"
             exit 0
           fi
           echo "取得開始: ${YEAR}年"
           for month in $(seq 1 12); do
+            CSV="data/raceresults_${YEAR}$(printf '%02d' $month).csv"
+            # 既に取得済みならスキップ
+            if [ -f "$CSV" ] && [ $(wc -l < "$CSV") -gt 1 ]; then
+              echo "スキップ（取得済み）: ${YEAR}年${month}月"
+              continue
+            fi
             echo "===== ${YEAR}年${month}月 ====="
             python fetch_history.py --year $YEAR --month $month || true
+            # 月ごとに即コミット&プッシュ
+            git add "$CSV"
+            if ! git diff --staged --quiet; then
+              git commit -m "data: fetch history ${YEAR}$(printf '%02d' $month) [skip ci]"
+              for i in 1 2 3 4 5; do
+                git pull --rebase origin main && git push origin main && break || \
+                { echo "push失敗 リトライ ${i}/5"; sleep $((i * 10)); }
+              done
+            fi
             sleep 5
           done
           echo "取得完了: ${YEAR}年"
-
-      - name: Commit raw data (${{ matrix.year }})
-        run: |
-          git config user.name  "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add data/raceresults_${{ matrix.year }}*.csv
-          if git diff --staged --quiet; then
-            echo "変更なし"
-          else
-            git commit -m "data: fetch history bulk ${{ matrix.year }} [skip ci]"
-            # 競合を避けるためリトライ付きでpush
-            for i in 1 2 3 4 5; do
-              git pull --rebase origin main && \
-              git push origin main && break || \
-              { echo "push失敗 リトライ ${i}/5"; sleep $((i * 10)); }
-            done
-          fi
 
       - name: Backfill course/dist (${{ matrix.year }})
         run: python backfill_race_names.py --year ${{ matrix.year }} || true
