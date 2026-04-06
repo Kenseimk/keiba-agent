@@ -6,6 +6,9 @@ __pycache__/
 # Claude Code 内部ファイル
 .claude/
 
+# 認証情報 (絶対にコミットしない)
+.env
+
 # テスト出力・一時ファイル
 predict_input_0328.csv
 predict_out.txt
