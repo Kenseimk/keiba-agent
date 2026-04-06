@@ -59,11 +59,23 @@ EVAL_SCORE = {
 # 調教コース → カテゴリ
 COURSE_CATEGORY = {
     'ウッド': 'wood', 'W': 'wood', '南W': 'wood', '北W': 'wood', 'CW': 'wood',
+    # full-width variants (netkeiba HTML uses 全角)
+    'Ｗ': 'wood', '美Ｗ': 'wood', '南Ｗ': 'wood', '北Ｗ': 'wood', 'ＣＷ': 'wood',
     '坂路': 'slope',
-    'ポリ': 'poly', 'ポリトラック': 'poly', 'P': 'poly',
+    'ポリ': 'poly', 'ポリトラック': 'poly', 'P': 'poly', 'Ｐ': 'poly',
+    '美Ｐ': 'poly', 'ＤＰ': 'poly',
     'ダート': 'dirt',
     '芝': 'turf',
 }
+
+
+def _normalize_course(raw: str) -> str:
+    """コース名を正規化: 改行・余分な空白・一番時計などを除去して最初のトークンを返す"""
+    if not raw:
+        return ''
+    # 改行やスペースで分割して最初のトークン
+    token = raw.strip().split('\n')[0].strip()
+    return token
 
 # ────────────────────────────────────────────────
 # 調教コース別の基準タイム (3F秒) ※上位馬の目安
@@ -107,16 +119,28 @@ def netkeiba_login(page, login_id: str, password: str) -> bool:
     try:
         page.fill('input[name="login_id"]', login_id)
         page.fill('input[name="pswd"]', password)
-        page.click('input[type="image"], input[type="submit"]')
-        page.wait_for_timeout(2500)
 
-        # ログイン成功判定: regist ページから離れていれば成功
-        current = page.url
-        if 'regist.netkeiba.com' in current and 'login' in current:
-            print('失敗 (認証エラー)')
-            return False
-        print(f'成功 ({current[:50]})')
-        return True
+        # login_id フォームの中にある image ボタンをクリック
+        submit_btn = page.locator('input[name="login_id"]').locator(
+            'xpath=ancestor::form//input[@type="image" or @type="submit"]'
+        ).first
+        with page.expect_navigation(wait_until='domcontentloaded', timeout=15000):
+            submit_btn.click()
+        page.wait_for_timeout(3000)
+
+        # nkauth クッキーがあればログイン成功
+        cookies = {c['name']: c['value'] for c in page.context.cookies()}
+        if 'nkauth' in cookies:
+            print('成功')
+            return True
+
+        # フォールバック: URL チェック
+        if 'regist.netkeiba.com' not in page.url or 'login' not in page.url:
+            print(f'成功 (URL: {page.url[:50]})')
+            return True
+
+        print('失敗 (認証クッキーなし)')
+        return False
     except Exception as e:
         print(f'例外: {e}')
         return False
@@ -127,102 +151,101 @@ def parse_training_detail(page, horse_id: str, horse_name: str) -> dict:
     training.html から最終追い切り情報を取得。
     プレミアムログイン済みの page を渡す。
 
+    実際のカラム構成:
+      日付 | コース | 馬場 | 乗り役 | 調教タイム | 位置 | 脚色 | 評価 | 映像
+
+    調教タイム列は改行区切りで複数タイムが入る:
+      (7)99.1 / 67.8 / 52.3 / 37.4 / 11.6
+      → 後ろから: [-1]=1F, [-2]=3F, [-3]=4F, [-4]=5F
+
     戻り値: {
         'course', 'time_5f', 'time_4f', 'time_3f', 'time_1f',
-        'style', 'date', 'source': 'premium'
+        'style', 'eval_text', 'date', 'source': 'premium'
     }
     """
     url = f'{DB_URL}/horse/training.html?id={horse_id}'
     page.goto(url, wait_until='domcontentloaded')
     page.wait_for_timeout(2000)
 
-    # ページがプレミアム案内にリダイレクトされた場合はスキップ
     if 'premium' in page.url or 'regist' in page.url:
         return {}
 
     data = page.evaluate(r"""() => {
-        // 追い切りテーブルを探す
-        const tables = Array.from(document.querySelectorAll('table'));
-        let trainTable = null;
-        for (const t of tables) {
-            const text = t.textContent;
-            if (text.includes('コース') && (text.includes('3F') || text.includes('タイム'))) {
-                trainTable = t;
+        // class="race_table_01 nk_tb_common" のテーブルを取得
+        const tables = Array.from(document.querySelectorAll('table.race_table_01'));
+        if (!tables.length) return null;
+
+        const trainTable = tables[0];
+        const rows = Array.from(trainTable.querySelectorAll('tr'));
+
+        // ヘッダー確認
+        const headers = Array.from(rows[0]?.querySelectorAll('th,td') || [])
+                            .map(c => c.textContent.trim());
+
+        // 最新データ行を探す (短評行をスキップ)
+        let dataRow = null;
+        for (let i = 1; i < rows.length; i++) {
+            const cells = Array.from(rows[i].querySelectorAll('td'));
+            // 日付パターン (YYYY/MM/DD) があればデータ行
+            if (cells.length >= 4 && /\d{4}\/\d{2}\/\d{2}/.test(cells[0]?.textContent || '')) {
+                dataRow = cells.map(c => c.textContent.trim());
                 break;
             }
         }
-        if (!trainTable) return null;
 
-        // ヘッダー行でカラム位置を特定
-        const headerRow = trainTable.querySelector('tr');
-        const headers = Array.from(headerRow?.querySelectorAll('th,td') || []).map(c => c.textContent.trim());
-
-        // データ行 (最初のデータ行 = 最新追い切り)
-        const dataRows = Array.from(trainTable.querySelectorAll('tr')).slice(1);
-        if (dataRows.length === 0) return {headers, rows: []};
-
-        const rows = dataRows.slice(0, 3).map(row => {
-            const cells = Array.from(row.querySelectorAll('td,th')).map(c => c.textContent.trim());
-            return cells;
-        });
-
-        return {headers, rows};
+        return dataRow ? {headers, row: dataRow} : {headers, row: null};
     }""")
 
-    if not data or not data.get('rows'):
+    if not data or not data.get('row'):
         return {}
 
     headers = data.get('headers', [])
-    first_row = data['rows'][0] if data['rows'] else []
+    row     = data['row']
 
-    # カラムインデックスを動的に特定
+    # カラムインデックス (ヘッダーから動的に特定)
     def find_col(keywords):
         for i, h in enumerate(headers):
             if any(k in h for k in keywords):
                 return i
         return -1
 
-    col_date   = find_col(['日付', '年月日'])
-    col_course = find_col(['コース', '場所'])
-    col_5f     = find_col(['5F', '5ハロン'])
-    col_4f     = find_col(['4F', '4ハロン'])
-    col_3f     = find_col(['3F', '3ハロン'])
-    col_1f     = find_col(['1F', '1ハロン', 'ラスト'])
-    col_style  = find_col(['追', '方法', '強度', '状態'])
+    col_date   = find_col(['日付'])
+    col_course = find_col(['コース'])
+    col_time   = find_col(['調教タイム', 'タイム'])
+    col_style  = find_col(['脚色'])
+    col_eval   = find_col(['評価'])
 
-    def safe_get(row, idx):
+    def safe(idx):
         return row[idx] if 0 <= idx < len(row) else ''
 
-    def parse_time(s):
-        s = s.strip()
-        if not s or s in ('-', '**'):
-            return None
-        # "1:XX.X" 形式 → 秒
-        m = re.match(r'(\d+):(\d+)\.(\d)', s)
-        if m:
-            return int(m.group(1)) * 60 + float(f'{m.group(2)}.{m.group(3)}')
-        # "XX.X" 形式
-        try:
-            return float(s)
-        except ValueError:
-            return None
+    # 調教タイム列から数値を全て抽出
+    time_text = safe(col_time)
+    nums = [float(m) for m in re.findall(r'\d+\.\d', time_text)]
+    # 末尾から: [-1]=1F, [-2]=3F, [-3]=4F, [-4]=5F
+    def pick(idx):
+        try: return nums[idx]
+        except: return None
 
     def parse_course(s):
         s = s.strip()
-        for key in COURSE_CATEGORY:
-            if key in s:
-                return key
+        # 美W→ウッド, 栗W→ウッド, 美坂→坂路 etc.
+        if 'W' in s or 'ｗ' in s or 'ウッド' in s: return 'ウッド'
+        if '坂' in s:                               return '坂路'
+        if 'ポリ' in s or 'P' in s:                return 'ポリ'
+        if 'ダート' in s or 'ダ' in s:             return 'ダート'
+        if '芝' in s:                               return '芝'
         return s
 
     return {
-        'date':    safe_get(first_row, col_date),
-        'course':  parse_course(safe_get(first_row, col_course)),
-        'time_5f': parse_time(safe_get(first_row, col_5f)),
-        'time_4f': parse_time(safe_get(first_row, col_4f)),
-        'time_3f': parse_time(safe_get(first_row, col_3f)),
-        'time_1f': parse_time(safe_get(first_row, col_1f)),
-        'style':   safe_get(first_row, col_style),
-        'source':  'premium',
+        'date':      safe(col_date).split('(')[0].strip(),
+        'course':    parse_course(safe(col_course)),
+        'time_5f':   pick(-4) if len(nums) >= 4 else None,
+        'time_4f':   pick(-3) if len(nums) >= 3 else None,
+        'time_3f':   pick(-2) if len(nums) >= 2 else None,
+        'time_1f':   pick(-1) if len(nums) >= 1 else None,
+        'style':     safe(col_style),
+        'eval_text': safe(col_eval),
+        'source':    'premium',
     }
 
 
@@ -420,9 +443,23 @@ def oikiri_score(horse_name: str, oikiri_db: dict) -> float:
     eval_code = info.get('eval', '')
     base = EVAL_SCORE.get(eval_code, 5.0)
 
+    # プレミアムの eval_text でも評価 (S/A/B/C/D が取れていない場合の補完)
+    if not eval_code and info.get('source') == 'premium':
+        eval_text = info.get('eval_text', '')
+        if any(k in eval_text for k in ['絶好調', '仕上がり十', '完璧', '一番時計']):
+            base = 9.0
+        elif any(k in eval_text for k in ['仕上がる', '仕上良好', '好調持続', '動き軽快', '好気配', '上々', '出来は良', '出来良']):
+            base = 7.5
+        elif any(k in eval_text for k in ['キビキビ', '順調', '平均以上', '前走並み', '出来は普通']):
+            base = 6.0
+        elif any(k in eval_text for k in ['平凡', '標準', '物足りな', '平行線']):
+            base = 4.5
+        elif any(k in eval_text for k in ['気配一息', '一息', '元気なし', '疲れ']):
+            base = 3.0
+
     # ── プレミアムデータがある場合はタイムで補正 ─────
     if info.get('source') == 'premium' and info.get('time_3f') is not None:
-        course_raw = info.get('course', '')
+        course_raw = _normalize_course(info.get('course', ''))
         cat = COURSE_CATEGORY.get(course_raw, '')
         t3f = info.get('time_3f')
         t1f = info.get('time_1f')
