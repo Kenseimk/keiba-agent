@@ -610,6 +610,76 @@ def f_season(history: list, current_ym: str) -> float:
     return clamp(w * (wins/len(same)*8 + places/len(same)*2 + 2) + (1-w) * 5.0)
 
 
+def f_jockey_horse_fit(history: list, jockey: str) -> float:
+    """
+    騎手×馬の相性: 同じ騎手とのコンビ時の成績
+    3戦以上の組み合わせがあれば勝率・連対率を評価
+    """
+    if not history or not jockey:
+        return 5.0
+    same = [r for r in history if r.get('jockey', '') == jockey]
+    if len(same) < 2:
+        return 5.0
+    wins   = sum(1 for r in same if r['rank'] == 1)
+    places = sum(1 for r in same if r['rank'] <= 3)
+    w = min(len(same) / 4.0, 1.0)
+    score = w * (wins / len(same) * 8.0 + places / len(same) * 3.0 + 2.0) + (1 - w) * 5.0
+    return clamp(score)
+
+
+def f_weight_fit(history: list, bw_now: float) -> float:
+    """
+    体重最適範囲: 過去の勝利時・好走時の体重と今回の体重を比較
+    馬体重が好走時の範囲内なら加点、大きく外れていたら減点
+    bw_now: 今回の馬体重 (kg)。Noneまたは0なら5.0返す
+    """
+    if not history or not bw_now or bw_now <= 0:
+        return 5.0
+    # 好走時(3着以内)の体重を収集
+    good_weights = [
+        r['bw'] for r in history
+        if r.get('rank', 99) <= 3 and r.get('bw') and r['bw'] > 0
+    ]
+    if len(good_weights) < 2:
+        return 5.0
+    avg = sum(good_weights) / len(good_weights)
+    std = (sum((x - avg) ** 2 for x in good_weights) / len(good_weights)) ** 0.5
+    std = max(std, 4.0)   # 最低4kg の余裕
+    diff = abs(bw_now - avg)
+    if diff <= std * 0.5:
+        return 8.0    # ベスト体重圏内
+    elif diff <= std * 1.0:
+        return 6.5    # やや外れ
+    elif diff <= std * 2.0:
+        return 4.0    # 大きく外れ
+    else:
+        return 2.5    # 過去最大乖離
+
+
+def f_weight_carried(history: list, kg_now: float) -> float:
+    """
+    斤量変化: 前走からの斤量増減を評価
+    増量なら減点、同斤なら中立、減量なら加点
+    kg_now: 今回の斤量 (None なら 5.0)
+    """
+    if not history or not kg_now or kg_now <= 0:
+        return 5.0
+    prev_kg = history[0].get('weight_carried') or history[0].get('kg')
+    if not prev_kg or prev_kg <= 0:
+        return 5.0
+    delta = kg_now - prev_kg
+    if delta <= -2.0:
+        return 8.0    # 2kg以上減量 → 有利
+    elif delta < 0:
+        return 7.0    # 1kg減量
+    elif delta == 0:
+        return 5.5    # 同斤
+    elif delta <= 1.0:
+        return 4.0    # 1kg増量
+    else:
+        return 2.5    # 2kg以上増量 → 不利
+
+
 def f_training(horse_name: str, oikiri_db: dict) -> float:
     """
     調教スコア: fetch_oikiri.py で取得した oikiri_db を使用 (0〜10)
@@ -650,28 +720,31 @@ def _odds_fallback(pop: int, odds: float) -> float:
 # ══════════════════════════════════════════════════════
 
 USCORE_WEIGHTS = {
-    'ability':        3.0,   # 能力指数
-    'acceleration':   2.5,   # 加速力・瞬発力
-    'training':       2.5,   # 調教評価 (oikiri_db がある場合のみ有効)
-    'jockey':         2.0,   # 騎手
-    'trainer':        2.0,   # 調教師
-    'course_fit':     2.0,   # コース適性
-    'prev_content':   2.0,   # 前走内容
-    'unfulfilled':    1.5,   # 不完全燃焼度
-    'track_cond':     1.5,   # 馬場相性
-    'running_style':  1.5,   # 脚質
-    'rotation':       1.5,   # ローテーション
-    'prev_agari':     1.5,   # 前走上がり
-    'prev_level':     1.0,   # 前走レベル
-    'prev_position':  1.0,   # 前走位置
-    'tight_track':    1.0,   # 小回り適性
-    'slope':          1.0,   # 坂適性
-    'grass_type':     1.0,   # 野芝/洋芝適性
-    'dirt_fit':       1.0,   # ダート適性
-    'pci':            1.0,   # PCI
-    'gate':           0.5,   # 枠適性
-    'season':         0.5,   # 季節適性
-    'travel':         0.5,   # 遠征
+    'ability':          3.0,   # 能力指数
+    'acceleration':     2.5,   # 加速力・瞬発力
+    'training':         2.5,   # 調教評価 (oikiri_db がある場合のみ有効)
+    'jockey':           2.0,   # 騎手
+    'trainer':          2.0,   # 調教師
+    'course_fit':       2.0,   # コース適性
+    'prev_content':     2.0,   # 前走内容
+    'unfulfilled':      1.5,   # 不完全燃焼度
+    'track_cond':       1.5,   # 馬場相性
+    'running_style':    1.5,   # 脚質
+    'rotation':         1.5,   # ローテーション
+    'prev_agari':       1.5,   # 前走上がり
+    'prev_level':       1.0,   # 前走レベル
+    'prev_position':    1.0,   # 前走位置
+    'tight_track':      1.0,   # 小回り適性
+    'slope':            1.0,   # 坂適性
+    'grass_type':       1.0,   # 野芝/洋芝適性
+    'dirt_fit':         1.0,   # ダート適性
+    'pci':              1.0,   # PCI
+    'gate':             0.5,   # 枠適性
+    'season':           0.5,   # 季節適性
+    'travel':           0.5,   # 遠征
+    'jockey_horse_fit': 1.5,   # 騎手×馬の相性
+    'weight_fit':       1.0,   # 体重最適範囲
+    'weight_carried':   0.5,   # 斤量変化
 }
 
 _WSUM = sum(USCORE_WEIGHTS.values())
@@ -685,9 +758,11 @@ def calc_horse_factors(
     name, jockey, odds_val, pop, gate_num,
     history, jstats, dc_db,
     course, dist, track_cond, venue_code, race_ym,
-    trainer_stats: dict = None,
-    jockey_stats:  dict = None,
-    oikiri_db:     dict = None,
+    trainer_stats:   dict  = None,
+    jockey_stats:    dict  = None,
+    oikiri_db:       dict  = None,
+    bw_now:          float = None,   # 今回の馬体重 (kg)
+    kg_now:          float = None,   # 今回の斤量 (kg)
 ) -> dict:
     """1頭分の全因子スコアを計算して返す"""
     has = len(history) > 0
@@ -695,28 +770,31 @@ def calc_horse_factors(
     trainer = history[0].get('trainer', '') if has else ''
 
     factors = {
-        'ability':       f_ability(history)                       if has else fb,
-        'acceleration':  f_acceleration(history)                  if has else fb * 0.9,
-        'training':      f_training(name, oikiri_db),
-        'jockey':        f_jockey(jockey, jockey_stats if jockey_stats is not None else jstats),
-        'trainer':       f_trainer(trainer, trainer_stats),
-        'course_fit':    f_course_fit(name, course, dist, dc_db),
-        'prev_content':  f_prev_content(history)                  if has else fb * 0.9,
-        'unfulfilled':   f_unfulfilled(history)                   if has else 5.0,
-        'track_cond':    f_track_cond(history, track_cond)        if has else 5.0,
-        'running_style': f_running_style(history, course, dist)   if has else 5.0,
-        'rotation':      f_rotation(history, race_ym)             if has else 5.0,
-        'prev_agari':    f_prev_agari(history)                    if has else 5.0,
-        'prev_level':    f_prev_level(history)                    if has else 5.0,
-        'prev_position': f_prev_position(history)                 if has else 5.0,
-        'tight_track':   f_tight_track(history, venue_code)       if has else 5.0,
-        'slope':         f_slope(history, venue_code)             if has else 5.0,
-        'grass_type':    f_grass_type(history, venue_code)        if has else 5.0,
-        'dirt_fit':      f_dirt_fit(history, course)              if has else 5.0,
-        'pci':           f_pci(history)                           if has else 5.0,
-        'gate':          f_gate(history, gate_num)                if has else 5.0,
-        'season':        f_season(history, race_ym)               if has else 5.0,
-        'travel':        f_travel(history, venue_code)            if has else 5.0,
+        'ability':          f_ability(history)                       if has else fb,
+        'acceleration':     f_acceleration(history)                  if has else fb * 0.9,
+        'training':         f_training(name, oikiri_db),
+        'jockey':           f_jockey(jockey, jockey_stats if jockey_stats is not None else jstats),
+        'trainer':          f_trainer(trainer, trainer_stats),
+        'course_fit':       f_course_fit(name, course, dist, dc_db),
+        'prev_content':     f_prev_content(history)                  if has else fb * 0.9,
+        'unfulfilled':      f_unfulfilled(history)                   if has else 5.0,
+        'track_cond':       f_track_cond(history, track_cond)        if has else 5.0,
+        'running_style':    f_running_style(history, course, dist)   if has else 5.0,
+        'rotation':         f_rotation(history, race_ym)             if has else 5.0,
+        'prev_agari':       f_prev_agari(history)                    if has else 5.0,
+        'prev_level':       f_prev_level(history)                    if has else 5.0,
+        'prev_position':    f_prev_position(history)                 if has else 5.0,
+        'tight_track':      f_tight_track(history, venue_code)       if has else 5.0,
+        'slope':            f_slope(history, venue_code)             if has else 5.0,
+        'grass_type':       f_grass_type(history, venue_code)        if has else 5.0,
+        'dirt_fit':         f_dirt_fit(history, course)              if has else 5.0,
+        'pci':              f_pci(history)                           if has else 5.0,
+        'gate':             f_gate(history, gate_num)                if has else 5.0,
+        'season':           f_season(history, race_ym)               if has else 5.0,
+        'travel':           f_travel(history, venue_code)            if has else 5.0,
+        'jockey_horse_fit': f_jockey_horse_fit(history, jockey)      if has else 5.0,
+        'weight_fit':       f_weight_fit(history, bw_now)            if has else 5.0,
+        'weight_carried':   f_weight_carried(history, kg_now)        if has else 5.0,
     }
 
     raw_score  = sum(USCORE_WEIGHTS[k] * v for k, v in factors.items())
@@ -803,6 +881,8 @@ def analyze_race_uscore(
         odds_val = float(o_info.get('odds') or 0)
         pop      = _int(o_info.get('pop'), 99)
         gate_num = _int(h_info.get('gate_num') or h_info.get('umaban'), 0)
+        bw_now   = _float(h_info.get('bw') or h_info.get('body_weight'))
+        kg_now   = _float(h_info.get('kg') or h_info.get('weight_carried'))
         history  = horse_db.get(name, [])
 
         hd = calc_horse_factors(
@@ -812,6 +892,8 @@ def analyze_race_uscore(
             trainer_stats=trainer_stats,
             jockey_stats=jockey_stats,
             oikiri_db=oikiri_db,
+            bw_now=bw_now,
+            kg_now=kg_now,
         )
         horse_data.append(hd)
 
@@ -956,6 +1038,57 @@ FACTOR_JA = {
 }
 
 
+N_DELTA_MARKS = 4   # △の頭数（win_prob 5〜8位）
+
+
+def assign_marks(results: list) -> dict:
+    """
+    win_prob 降順で ◎○▲☆△ を割り当てる。
+    戻り値: {馬名: 印文字}
+    """
+    sorted_by_wp = sorted(results, key=lambda x: x['win_prob'], reverse=True)
+    marks = {}
+    for i, h in enumerate(sorted_by_wp):
+        if i == 0:
+            marks[h['name']] = '◎'
+        elif i == 1:
+            marks[h['name']] = '○'
+        elif i == 2:
+            marks[h['name']] = '▲'
+        elif i == 3:
+            marks[h['name']] = '☆'
+        elif i < 4 + N_DELTA_MARKS:
+            marks[h['name']] = '△'
+        else:
+            marks[h['name']] = ''
+    return marks
+
+
+def format_sanrentan_tickets(marks: dict) -> str:
+    """
+    PDFパターンCの三連単マルチ流し買い目を文字列で返す。
+    C1: ◎○→▲△☆  C2: ◎▲→△☆
+    """
+    honmei  = [n for n, m in marks.items() if m == '◎']
+    rentan  = [n for n, m in marks.items() if m in ('◎', '○')]
+    sankaku = [n for n, m in marks.items() if m in ('▲', '☆', '△')]
+    hosi    = [n for n, m in marks.items() if m in ('☆', '△')]
+    sante_c2 = [n for n, m in marks.items() if m in ('▲',)]
+    c1_axis  = sorted(rentan)
+    c2_axis  = honmei + sante_c2
+
+    lines = []
+    if len(c1_axis) >= 2 and sankaku:
+        s = '/'.join(c1_axis)
+        t = '/'.join(sankaku)
+        lines.append(f'C1: [{s}]→[{t}] マルチ ({2*len(sankaku)}通)')
+    if len(c2_axis) >= 2 and hosi:
+        s = '/'.join(c2_axis)
+        t = '/'.join(hosi)
+        lines.append(f'C2: [{s}]→[{t}] マルチ ({2*len(hosi)}通)')
+    return '\n'.join(lines)
+
+
 def print_uscore_result(race_info: dict, results: list) -> None:
     race_name = (race_info.get('race_name') or '').strip()
     dist      = race_info.get('dist', 0)
@@ -964,31 +1097,35 @@ def print_uscore_result(race_info: dict, results: list) -> None:
     rnum      = race_info.get('rnum', '?')
     race_id   = race_info.get('race_id', '')
 
-    # race_name が空なら rnum + race_id で代替表示
     if not race_name:
         race_name = f'{rnum}R ({race_id})'
 
+    marks = assign_marks(results)
+    # win_prob 降順で表示
+    results_by_wp = sorted(results, key=lambda x: x['win_prob'], reverse=True)
+
     print(f'\n{"="*76}')
     print(f'  {rnum}R  {race_name}  {course}{dist}m  {n}頭')
-    print(f'  [U score]  EV = 推定勝率 × オッズ × 100  (100=損益分岐点)')
+    print(f'  [U score]  印=win_prob順  U=EV×100 (100=損益分岐点)')
     print(f'{"="*76}')
-    print(f'  {"馬名":14} {"騎手":8} {"人気":>4} {"オッズ":>6}  '
-          f'{"混合%":>6}  {"市場%":>6}  {"EV":>5}  {"Uscore":>7}  {"走数"}')
+    print(f'  {"印":2} {"馬名":14} {"騎手":8} {"人気":>4} {"オッズ":>6}  '
+          f'{"勝率%":>6}  {"市場%":>6}  {"Uscore":>7}  {"走数"}')
     print(f'  {"-"*78}')
-    marks = ['★', '▲', '▽']
-    for i, h in enumerate(results[:8]):
-        mark  = marks[i] if i < 3 else '  '
-        nr    = f'({h["n_races"]}走)' if h['n_races'] > 0 else '(履歴なし)'
-        score_str = f'{h["u_score"]:>7.1f}'
-        # ◎マークはベット対象オッズ帯(2〜30倍)かつ閾値以上のみ
-        in_bet_range = BET_ODDS_MIN <= h['odds'] <= BET_ODDS_MAX
-        if in_bet_range and h['u_score'] >= 120:   score_str += ' ◎'
-        elif in_bet_range and h['u_score'] >= 110: score_str += ' ○'
-        elif in_bet_range and h['u_score'] >= 100: score_str += ' △'
-        print(f'  {mark}{h["name"]:14} {h["jockey"]:8} {h["pop"]:>4} '
+
+    for h in results_by_wp[:10]:
+        mark = marks.get(h['name'], '')
+        nr   = f'({h["n_races"]}走)' if h['n_races'] > 0 else '(履歴なし)'
+        print(f'  {mark:2} {h["name"]:14} {h["jockey"]:8} {h["pop"]:>4} '
               f'{h["odds"]:>6.1f}  {h["win_prob"]:>5.1f}%  '
               f'{h["market_prob"]:>5.1f}%  '
-              f'{h["ev"]:>5.3f}  {score_str}  {nr}')
+              f'{h["u_score"]:>7.1f}  {nr}')
+
+    # 三連単マルチ買い目
+    tickets = format_sanrentan_tickets(marks)
+    if tickets:
+        print(f'\n  [三連単マルチ流し (パターンC)]')
+        for line in tickets.split('\n'):
+            print(f'  {line}')
 
     # ベット推奨
     bet = check_bet_uscore(results)

@@ -89,6 +89,9 @@ def load_all_csv_races(data_dir: str = DATA_DIR) -> dict:
         # 馬ごとの情報リスト
         horse_list = []
         for h in rows:
+            # 馬体重: "480(+4)" → 480 のみ取り出す
+            bw_raw = h.get('馬体重', '')
+            bw_val = _float(re.sub(r'\(.*\)', '', bw_raw).strip()) if bw_raw else None
             horse_list.append({
                 'name':        h.get('馬名', ''),
                 'jockey':      h.get('騎手', ''),
@@ -99,6 +102,8 @@ def load_all_csv_races(data_dir: str = DATA_DIR) -> dict:
                 'rank':        _int(h.get('着順'), 99),
                 'agari_rank':  agari_rank_map.get(h.get('馬名', ''), -1),
                 'agari_field': n_agari,
+                'bw':          bw_val,
+                'kg':          _float(h.get('斤量')),
             })
 
         races[race_id] = {
@@ -151,27 +156,31 @@ def _build_race_records(race_id: str, info: dict) -> dict[str, dict]:
         venue_raw  = (h.get('場コード') or '').strip()
         venue_code = venue_raw.zfill(2) if venue_raw else (
             race_id[4:6] if len(race_id) >= 6 else '00')
+        bw_raw = h.get('馬体重', '')
+        bw_val = _float(re.sub(r'\(.*\)', '', bw_raw).strip()) if bw_raw else None
         records[h['馬名']] = {
-            'race_id':     race_id,
-            'race_ym':     file_ym,
-            'venue_code':  venue_code,
-            'rank':        rank,
-            'field_size':  n_field,
-            'jockey':      h.get('騎手', ''),
-            'odds':        _float(h.get('単勝オッズ')),
-            'pop':         _int(h.get('人気'), 0),
-            'agari':       _float(h.get('上がり3F')),
-            'agari_rank':  agari_rank_map.get(h.get('馬名', ''), -1),
-            'agari_field': n_agari,
-            'avg_pos':     _parse_avg_pos(h.get('通過順', '')),
-            'bw_chg':      _parse_bw(h.get('馬体重', '')),
-            'margin':      _parse_margin(h.get('着差', ''), rank),
-            'dist':        _int(h.get('距離')),
-            'course':      (h.get('コース') or '').strip(),
-            'track_cond':  (h.get('馬場状態') or '').strip(),
-            'gate_num':    _int(h.get('枠番'), 0),
-            'grade':       ((h.get('grade') or '').strip()
-                           or _infer_grade_from_name(h.get('race_name', ''))),
+            'race_id':        race_id,
+            'race_ym':        file_ym,
+            'venue_code':     venue_code,
+            'rank':           rank,
+            'field_size':     n_field,
+            'jockey':         h.get('騎手', ''),
+            'odds':           _float(h.get('単勝オッズ')),
+            'pop':            _int(h.get('人気'), 0),
+            'agari':          _float(h.get('上がり3F')),
+            'agari_rank':     agari_rank_map.get(h.get('馬名', ''), -1),
+            'agari_field':    n_agari,
+            'avg_pos':        _parse_avg_pos(h.get('通過順', '')),
+            'bw_chg':         _parse_bw(h.get('馬体重', '')),
+            'bw':             bw_val,
+            'weight_carried': _float(h.get('斤量')),
+            'margin':         _parse_margin(h.get('着差', ''), rank),
+            'dist':           _int(h.get('距離')),
+            'course':         (h.get('コース') or '').strip(),
+            'track_cond':     (h.get('馬場状態') or '').strip(),
+            'gate_num':       _int(h.get('枠番'), 0),
+            'grade':          ((h.get('grade') or '').strip()
+                              or _infer_grade_from_name(h.get('race_name', ''))),
         }
     return records
 
@@ -212,10 +221,11 @@ def make_race_info(info: dict) -> dict:
         'dist':       info['dist'],
         'course':     info['course'],
         'track_cond': info['track_cond'],
-        # horses: name, jockey, gate_num, pop
+        # horses: name, jockey, gate_num, pop, bw, kg
         'horses': [
             {'name': h['name'], 'jockey': h['jockey'],
-             'gate_num': h['gate_num'], 'pop': h['pop']}
+             'gate_num': h['gate_num'], 'pop': h['pop'],
+             'bw': h.get('bw'), 'kg': h.get('kg')}
             for h in hl
         ],
         # odds: name, odds
@@ -243,13 +253,16 @@ def get_winner(info: dict) -> tuple[str, float]:
 # ══════════════════════════════════════════════════════
 
 def run_walkforward(
-    test_start: str = DEFAULT_START,
-    test_end:   str = DEFAULT_END,
-    verbose:    bool = False,
-    rnum_filter: list[int] = None,
+    test_start:   str = DEFAULT_START,
+    test_end:     str = DEFAULT_END,
+    verbose:      bool = False,
+    rnum_filter:  list[int] = None,
+    uscore_threshold: float = 100.0,   # ベット閾値
+    top_n_bet:    int = 1,             # 1レースで最大何頭にベット
 ) -> None:
     print(f'=== U score ウォークフォワード・バックテスト ===')
     print(f'テスト期間: {test_start} 〜 {test_end}')
+    print(f'ベット条件: U_score >= {uscore_threshold:.0f}  上位{top_n_bet}頭')
     print(f'学習: 拡張ウィンドウ (テスト月より前の全データ)\n')
 
     # ── 全レース読み込み ──────────────────────────────
@@ -283,7 +296,7 @@ def run_walkforward(
             if info['file_ym'] == ym
         }
 
-        cover_races = []   # {'race_id', 'covered': bool, 'top5_names', 'place3_names'}
+        bet_list   = []   # {'race_id', 'name', 'u_score', 'odds', 'hit': bool}
         skipped_cnt = 0
 
         for race_id in sorted(month_races.keys()):
@@ -324,63 +337,101 @@ def run_walkforward(
             if not results:
                 continue
 
-            # 上位5頭が3着内を全カバーしているか
-            top5_names   = {r['name'] for r in results[:5]}
-            place3_names = {h['name'] for h in info['horse_list'] if h['rank'] in (1, 2, 3)}
-            covered      = place3_names.issubset(top5_names)
+            # 実際の着順マップ
+            rank_map = {h['name']: h['rank'] for h in info['horse_list']}
+            odds_map = {h['name']: h['odds'] for h in info['horse_list']}
 
-            cover_races.append({
-                'race_id':      race_id,
-                'race_name':    race_name,
-                'covered':      covered,
-                'top5_names':   top5_names,
-                'place3_names': place3_names,
-            })
+            # ベット対象: U_score >= 閾値 の上位 top_n_bet 頭
+            bets_this_race = 0
+            for r in results:
+                if r['u_score'] < uscore_threshold:
+                    break
+                if bets_this_race >= top_n_bet:
+                    break
+                name     = r['name']
+                bet_odds = odds_map.get(name, r['odds'])
+                hit      = (rank_map.get(name, 99) == 1)
+                bet_list.append({
+                    'race_id':  race_id,
+                    'race_name': race_name,
+                    'name':     name,
+                    'u_score':  r['u_score'],
+                    'odds':     bet_odds,
+                    'pop':      r['pop'],
+                    'hit':      hit,
+                })
+                bets_this_race += 1
 
-            if verbose:
-                mark = '◯' if covered else '×'
-                top5_str = ', '.join(list(top5_names)[:5])
-                p3_str   = ', '.join(place3_names)
-                print(f"  {mark} {race_id} {race_name} | 上位5: {top5_str} | 3着内: {p3_str}")
+                if verbose:
+                    mark = '◎' if hit else '×'
+                    print(f"  {mark} {race_id} {race_name} | {name} U={r['u_score']:.1f} {bet_odds:.1f}倍 pop={r['pop']}")
 
         # 月次集計
-        n_races   = len(cover_races)
-        n_covered = sum(1 for c in cover_races if c['covered'])
-        cover_rate = n_covered / n_races * 100 if n_races > 0 else 0.0
+        n_bets  = len(bet_list)
+        n_hits  = sum(1 for b in bet_list if b['hit'])
+        paid    = sum(b['odds'] for b in bet_list if b['hit'])
+        cost    = float(n_bets)
+        roi     = paid / cost * 100 if cost > 0 else 0.0
+        win_rate = n_hits / n_bets * 100 if n_bets > 0 else 0.0
 
         monthly_stats.append({
-            'ym':         ym,
-            'n_races':    n_races,
-            'n_covered':  n_covered,
-            'cover_rate': cover_rate,
-            'cover_races': cover_races,
+            'ym':       ym,
+            'n_bets':   n_bets,
+            'n_hits':   n_hits,
+            'paid':     paid,
+            'cost':     cost,
+            'roi':      roi,
+            'win_rate': win_rate,
+            'bets':     bet_list,
         })
 
-        print(f"  {ym}: 対象{n_races:3d}R / カバー{n_covered:3d}R ({cover_rate:5.1f}%)")
+        print(f"  {ym}: ベット{n_bets:3d}R  的中{n_hits:3d}  勝率{win_rate:5.1f}%  "
+              f"回収{paid:7.1f}円/{cost:.0f}円  ROI={roi:6.1f}%")
 
         # ── この月のデータを horse_db に追加 ──────────
         for race_id, info in month_races.items():
             for name, rec in _build_race_records(race_id, info).items():
-                horse_db.setdefault(name, []).insert(0, rec)  # 最新を先頭に
+                horse_db.setdefault(name, []).insert(0, rec)
 
     # ══════════════════════════════════════════════════
     # 全体集計
     # ══════════════════════════════════════════════════
-    total_races   = sum(s['n_races']   for s in monthly_stats)
-    total_covered = sum(s['n_covered'] for s in monthly_stats)
-    total_rate    = total_covered / total_races * 100 if total_races > 0 else 0.0
+    total_bets = sum(s['n_bets'] for s in monthly_stats)
+    total_hits = sum(s['n_hits'] for s in monthly_stats)
+    total_paid = sum(s['paid']   for s in monthly_stats)
+    total_cost = sum(s['cost']   for s in monthly_stats)
+    total_roi  = total_paid / total_cost * 100 if total_cost > 0 else 0.0
+    total_wr   = total_hits / total_bets * 100  if total_bets > 0 else 0.0
 
     print()
-    print('=' * 55)
-    print(f"{'月':>8}  {'対象R':>5}  {'カバー':>6}  {'カバー率':>8}")
-    print('-' * 55)
+    print('=' * 72)
+    print(f"{'月':>8}  {'ベット':>6}  {'的中':>5}  {'勝率':>7}  {'回収':>10}  {'ROI':>8}")
+    print('-' * 72)
     for s in monthly_stats:
-        print(f"  {s['ym']}  {s['n_races']:5d}  {s['n_covered']:6d}  {s['cover_rate']:7.1f}%")
-    print('-' * 55)
-    print(f"  {'合計':>8}  {total_races:5d}  {total_covered:6d}  {total_rate:7.1f}%")
-    print('=' * 55)
+        print(f"  {s['ym']}  {s['n_bets']:6d}  {s['n_hits']:5d}  {s['win_rate']:6.1f}%"
+              f"  {s['paid']:8.1f}円  {s['roi']:7.1f}%")
+    print('-' * 72)
+    print(f"  {'合計':>8}  {total_bets:6d}  {total_hits:5d}  {total_wr:6.1f}%"
+          f"  {total_paid:8.1f}円  {total_roi:7.1f}%")
+    print('=' * 72)
     print()
-    print(f'※ カバー = U_score 上位5頭に3着内馬が全員含まれているレース')
+    print(f'※ 1単位=100円換算で投資{total_cost*100:.0f}円 → 回収{total_paid*100:.0f}円')
+    print(f'   損益: {(total_paid - total_cost)*100:+.0f}円')
+
+    # ── 閾値別サマリ（参考）─────────────────────────
+    all_bets = [b for s in monthly_stats for b in s['bets']]
+    if all_bets:
+        print()
+        print('── 閾値別回収率 ──')
+        print(f"{'閾値':>6}  {'ベット':>6}  {'的中':>5}  {'ROI':>8}")
+        for thr in [80, 90, 100, 110, 120, 150]:
+            tb = [b for b in all_bets if b['u_score'] >= thr]
+            if not tb:
+                continue
+            th = sum(1 for b in tb if b['hit'])
+            tp = sum(b['odds'] for b in tb if b['hit'])
+            tr = tp / len(tb) * 100
+            print(f"  {thr:4d}  {len(tb):6d}  {th:5d}  {tr:7.1f}%")
 
 
 # ══════════════════════════════════════════════════════
@@ -397,6 +448,10 @@ def main():
                         help='各ベット詳細を表示')
     parser.add_argument('--rnum', nargs='*', type=int, default=None,
                         help='R番号フィルタ (例: --rnum 8 9 10 11)')
+    parser.add_argument('--threshold', type=float, default=100.0,
+                        help='ベット閾値 U_score (デフォルト: 100)')
+    parser.add_argument('--top_n', type=int, default=1,
+                        help='1レースで最大ベット頭数 (デフォルト: 1)')
     args = parser.parse_args()
 
     run_walkforward(
@@ -404,6 +459,8 @@ def main():
         test_end=args.test_end,
         verbose=args.verbose,
         rnum_filter=args.rnum,
+        uscore_threshold=args.threshold,
+        top_n_bet=args.top_n,
     )
 
 
