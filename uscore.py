@@ -428,14 +428,31 @@ def f_slope(history: list, venue_code: str) -> float:
 
 
 def f_track_cond(history: list, track_cond: str) -> float:
-    """馬場相性: 同馬場状態(良/稍重/重/不良)での成績"""
+    """
+    馬場相性: 同馬場状態(良/稍重/重/不良)での成績
+    同馬場が2戦未満の場合は「良系(良)」「重系(稍重/重/不良)」でグループ補完
+    """
     if not history or not track_cond: return 5.0
-    same = [r for r in history if r.get('track_cond') == track_cond]
-    if len(same) < 2: return 5.0
-    wins   = sum(1 for r in same if r['rank'] == 1)
-    places = sum(1 for r in same if r['rank'] <= 3)
-    w = min(len(same) / 5.0, 1.0)
-    return clamp(w * (wins/len(same)*7 + places/len(same)*3 + 2) + (1-w) * 5.0)
+
+    def _score(races):
+        n = len(races)
+        if n == 0: return None
+        wins   = sum(1 for r in races if r['rank'] == 1)
+        places = sum(1 for r in races if r['rank'] <= 3)
+        w = min(n / 5.0, 1.0)
+        return clamp(w * (wins/n*7 + places/n*3 + 2) + (1-w) * 5.0)
+
+    # 完全一致
+    exact = [r for r in history if r.get('track_cond') == track_cond]
+    if len(exact) >= 2:
+        return _score(exact)
+
+    # グループ補完: 良系 vs 重系
+    WET = {'稍重', '重', '不良'}
+    is_wet = track_cond in WET
+    group = [r for r in history if (r.get('track_cond','') in WET) == is_wet]
+    s = _score(group)
+    return s if s is not None else 5.0
 
 
 def f_gate(history: list, gate_num: int) -> float:
@@ -589,6 +606,58 @@ def f_dirt_fit(history: list, course: str) -> float:
     places = sum(1 for r in same if r['rank'] <= 3)
     w = min(len(same) / 5.0, 1.0)
     return clamp(w * (wins/len(same)*8 + places/len(same)*2 + 2) + (1-w) * 5.0)
+
+
+def _dist_zone(dist: int) -> str:
+    """距離帯区分"""
+    if dist <= 1400:  return 'sprint'    # 短距離 〜1400m
+    if dist <= 1800:  return 'mile'      # マイル 1401〜1800m
+    if dist <= 2200:  return 'middle'    # 中距離 1801〜2200m
+    return 'long'                        # 長距離 2201m〜
+
+
+def f_dist_fit(history: list, dist: int) -> float:
+    """
+    距離帯適性: 同距離帯（短距離/マイル/中距離/長距離）での成績
+    完全一致距離でも補完（±200m以内）も試みる
+    """
+    if not history or not dist: return 5.0
+    zone = _dist_zone(dist)
+
+    # 同距離帯の全戦績
+    same_zone = [r for r in history if _dist_zone(r.get('dist') or 0) == zone]
+    if len(same_zone) < 2:
+        return 5.0
+
+    wins   = sum(1 for r in same_zone if r['rank'] == 1)
+    places = sum(1 for r in same_zone if r['rank'] <= 3)
+    w = min(len(same_zone) / 4.0, 1.0)
+
+    # 完全一致距離での勝率でボーナス
+    exact = [r for r in same_zone if abs((r.get('dist') or 0) - dist) <= 100]
+    if len(exact) >= 2:
+        ex_wins = sum(1 for r in exact if r['rank'] == 1)
+        ex_wr   = ex_wins / len(exact)
+        bonus   = ex_wr * 2.0   # 最大+2点
+    else:
+        bonus = 0.0
+
+    raw = wins/len(same_zone)*8 + places/len(same_zone)*2 + 2 + bonus
+    return clamp(w * raw + (1-w) * 5.0)
+
+
+def f_place_ability(history: list) -> float:
+    """
+    連対特化能力: 2着に最高点、3着も重視するスコア
+    ◎ではなく○を選ぶ際の補助スコアとして使う
+    """
+    # 2着=10, 3着=9, 1着=7（勝ち過ぎは相手が弱い可能性）, 以下減点
+    PTS = {1: 7.0, 2: 10.0, 3: 9.0, 4: 5.5, 5: 4.0}
+    def pts(rec):
+        r = rec.get('rank', 99)
+        return PTS.get(r, clamp(3.0 - (r - 6) * 0.4, 0, 3))
+    v = weighted_avg(history, pts)
+    return v if v is not None else 5.0
 
 
 def f_season(history: list, current_ym: str) -> float:
@@ -745,6 +814,7 @@ USCORE_WEIGHTS = {
     'jockey_horse_fit': 1.5,   # 騎手×馬の相性
     'weight_fit':       1.0,   # 体重最適範囲
     'weight_carried':   0.5,   # 斤量変化
+    'dist_fit':         1.5,   # 距離帯適性
 }
 
 _WSUM = sum(USCORE_WEIGHTS.values())
@@ -795,6 +865,7 @@ def calc_horse_factors(
         'jockey_horse_fit': f_jockey_horse_fit(history, jockey)      if has else 5.0,
         'weight_fit':       f_weight_fit(history, bw_now)            if has else 5.0,
         'weight_carried':   f_weight_carried(history, kg_now)        if has else 5.0,
+        'dist_fit':         f_dist_fit(history, dist)                if has else 5.0,
     }
 
     raw_score  = sum(USCORE_WEIGHTS[k] * v for k, v in factors.items())
@@ -835,8 +906,8 @@ def analyze_race_uscore(
     horse_db:      dict,
     jstats,
     dc_db,
-    temperature:   float = 1.2,
-    market_alpha:  float = 0.3,
+    temperature:   float = 1.5,
+    market_alpha:  float = 0.4,
     trainer_stats: dict  = None,
     jockey_stats:  dict  = None,
     oikiri_db:     dict  = None,
@@ -904,6 +975,15 @@ def analyze_race_uscore(
     norm_scores  = [h['norm_score'] for h in horse_data]
     model_probs  = _softmax_probs(norm_scores, temperature)
 
+    # ── 連対特化スコア（○選定用）────────────────────────
+    # f_place_ability を使った連対重視スコアを計算
+    place_raw = []
+    for h in horse_data:
+        hist = horse_db.get(h['name'], [])
+        pa   = f_place_ability(hist) if hist else 5.0
+        place_raw.append(pa)
+    place_probs = _softmax_probs(place_raw, temperature)
+
     # ── 市場オッズから暗示勝率 (vig除去後に正規化) ──────
     raw_odds = [h['odds'] for h in horse_data]
     inv_odds = [1.0 / o if o > 0 else 0.0 for o in raw_odds]
@@ -936,6 +1016,7 @@ def analyze_race_uscore(
             'win_prob':    round(prob * 100, 1),           # 混合後勝率
             'model_prob':  round(model_probs[i] * 100, 1),  # モデルのみ
             'market_prob': round(market_probs[i] * 100, 1), # 市場のみ
+            'place_prob':  round(place_probs[i] * 100, 1),  # 連対特化スコア
             'ev':          round(raw_ev, 3),
             'ev_capped':   round(ev, 3),
             'u_score':     u_score,

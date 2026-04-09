@@ -61,6 +61,16 @@ def ana_bet_kelly(prob, capital):
 def ken_bet(capital):
     return min(int(capital * 0.06 / 100) * 100, 50000)
 
+# FUKUSHO設定（隠れ末脚型複勝）
+FUK_ODDS_MIN  = 14.0
+FUK_ODDS_MAX  = 18.0
+FUK_POP_MIN   = 6
+FUK_POP_MAX   = 12
+FUK_FIELD_MIN = 8
+
+def fuk_bet(capital):
+    return min(int(capital * 0.02 / 100) * 100, 15000)
+
 # ============================================================
 # スコアリング関数
 # ============================================================
@@ -239,8 +249,9 @@ def run_backtest(races, jstats, initial_capital=70000, monthly_supplement=20000,
     capital = initial_capital
     prev_history = {}
 
-    stats_kensei = {'total': 0, 'hit': 0, 'invest': 0, 'ret': 0}
-    stats_ana    = {'total': 0, 'hit': 0, 'invest': 0, 'ret': 0}
+    stats_kensei  = {'total': 0, 'hit': 0, 'invest': 0, 'ret': 0}
+    stats_ana     = {'total': 0, 'hit': 0, 'invest': 0, 'ret': 0}
+    stats_fukusho = {'total': 0, 'hit': 0, 'invest': 0, 'ret': 0}
     stats_wide   = {'total': 0, 'invest': 0, 'ret': 0}
     stats_umaren = {'total': 0, 'invest': 0, 'ret': 0}
     stats_umatan = {'total': 0, 'invest': 0, 'ret': 0}
@@ -284,12 +295,31 @@ def run_backtest(races, jstats, initial_capital=70000, monthly_supplement=20000,
         # スコアリング無効化（穴馬専念）
         ken_selected = []
 
+        # --- FUKUSHO選定（隠れ末脚型）---
+        # 前走上がり3F 1位 & 前走7着以下 & 今走14〜18倍 & 6〜12番人気
+        fuk_selected = []
+        seen_fuk = set()
+        for race_id, info in races_m:
+            horses = info['horses']
+            if len(horses) < FUK_FIELD_MIN: continue
+            for h in horses:
+                ph = prev_history.get(h['name'])
+                if ph is None: continue
+                if ph['f3rank'] != 1: continue
+                if ph['finish_rank'] < 7: continue
+                if not (FUK_ODDS_MIN <= h['odds'] <= FUK_ODDS_MAX): continue
+                if not (FUK_POP_MIN <= h['popularity'] <= FUK_POP_MAX): continue
+                if race_id in seen_fuk: continue
+                seen_fuk.add(race_id)
+                fuk_selected.append((h, race_id, info))
+
         # prev_history を月M分で更新（ベット選定の後）
         for race_id, info in races_m:
             update_prev_history(info['horses'], prev_history)
 
         m_ken_invest = m_ken_ret = m_ken_hit = 0
         m_ana_invest = m_ana_ret = m_ana_hit = 0
+        m_fuk_invest = m_fuk_ret = m_fuk_hit = 0
 
         # --- スコアリング複勝ベット ---
         for _score, sel, race_id, info in ken_selected:
@@ -324,6 +354,24 @@ def run_backtest(races, jstats, initial_capital=70000, monthly_supplement=20000,
                 stats_ana['hit'] += 1
                 stats_ana['ret'] += payout
 
+        # --- FUKUSHO複勝ベット ---
+        for h, race_id, info in fuk_selected:
+            bet = fuk_bet(capital)
+            if bet < 100: continue
+            capital -= bet
+            m_fuk_invest += bet
+            stats_fukusho['total']  += 1
+            stats_fukusho['invest'] += bet
+
+            fukusho = parse_payout(info['fukusho_raw'])
+            if h['finish_rank'] <= 3 and h['umaban'] in fukusho:
+                payout = int(bet * fukusho[h['umaban']] / 100)
+                capital += payout
+                m_fuk_ret += payout
+                m_fuk_hit += 1
+                stats_fukusho['hit'] += 1
+                stats_fukusho['ret'] += payout
+
         # --- 全馬券種の払戻集計（全組み合わせ数を分母にした真のROI）---
         for race_id, info in races_m:
             n = len(info['horses'])
@@ -348,7 +396,7 @@ def run_backtest(races, jstats, initial_capital=70000, monthly_supplement=20000,
                     stat['ret']    += sum(pt.values())
 
         # 月利益の70%を軍資金に追加投入
-        m_profit = (m_ken_ret + m_ana_ret) - (m_ken_invest + m_ana_invest)
+        m_profit = (m_ken_ret + m_ana_ret + m_fuk_ret) - (m_ken_invest + m_ana_invest + m_fuk_invest)
         reinvest = int(max(0, m_profit) * profit_reinvest / 100) * 100
         capital += reinvest
 
@@ -356,16 +404,17 @@ def run_backtest(races, jstats, initial_capital=70000, monthly_supplement=20000,
             'ym':       ym,
             'k_invest': m_ken_invest, 'k_ret': m_ken_ret, 'k_hit': m_ken_hit,
             'a_invest': m_ana_invest, 'a_ret': m_ana_ret, 'a_hit': m_ana_hit,
+            'f_invest': m_fuk_invest, 'f_ret': m_fuk_ret, 'f_hit': m_fuk_hit,
             'reinvest': reinvest,
             'cap':      int(capital),
         })
 
-    return stats_kensei, stats_ana, stats_wide, stats_umaren, stats_umatan, stats_3puku, stats_3tan, monthly_rows
+    return stats_kensei, stats_ana, stats_fukusho, stats_wide, stats_umaren, stats_umatan, stats_3puku, stats_3tan, monthly_rows
 
 # ============================================================
 # 出力
 # ============================================================
-def print_results(sk, sa, sw, su, sut, s3p, s3t, monthly_rows):
+def print_results(sk, sa, sf, sw, su, sut, s3p, s3t, monthly_rows):
     print()
     print('=' * 75)
     print('=== 全馬券種バックテスト（CSV実データ使用）===')
@@ -376,17 +425,18 @@ def print_results(sk, sa, sw, su, sut, s3p, s3t, monthly_rows):
     print()
 
     for label, s in [(f'【スコアリング】複勝（スコア{SCORE_THRESHOLD}以上・月最大4件・軍資金×6%）', sk),
-                     ('【穴馬】複勝（確率25%以上・オッズ10-30倍・件数無制限・Kelly配分）', sa)]:
+                     ('【穴馬ANA】複勝（確率25%以上・オッズ10-30倍・件数無制限・Kelly配分）', sa),
+                     ('【FUKUSHO】複勝（前走上がり1位&7着↓・オッズ14-18倍・6-12番人気・軍資金×2%）', sf)]:
         hr  = s['hit'] / s['total'] * 100 if s['total'] else 0
         roi = s['ret'] / s['invest'] * 100 if s['invest'] else 0
         print(f'{label}')
         print(f'  参加:{s["total"]}件 的中:{s["hit"]}件({hr:.1f}%) 投資:¥{s["invest"]:,} 払戻:¥{s["ret"]:,} 回収率:{roi:.1f}%')
         print()
 
-    total_invest = sk['invest'] + sa['invest']
-    total_ret    = sk['ret'] + sa['ret']
+    total_invest = sk['invest'] + sa['invest'] + sf['invest']
+    total_ret    = sk['ret'] + sa['ret'] + sf['ret']
     roi_total = total_ret / total_invest * 100 if total_invest else 0
-    print(f'【スコアリング+穴馬 合計】')
+    print(f'【ANA+FUKUSHO 合計】')
     print(f'  投資:¥{total_invest:,} 払戻:¥{total_ret:,} 損益:¥{total_ret-total_invest:+,} 回収率:{roi_total:.1f}%')
     print()
     print('-' * 75)
@@ -401,21 +451,23 @@ def print_results(sk, sa, sw, su, sut, s3p, s3t, monthly_rows):
         print(f'  {label:<8}: {s["total"]:,}レース 平均投資¥{avg_invest:,} 平均払戻¥{avg_ret:,} 回収率{roi:.1f}%')
 
     print()
-    print('【月別詳細（スコアリング+穴馬）】')
-    print(f'月       | 穴馬                  | 損益      | 再投入   | 軍資金')
-    print('-' * 75)
+    print('【月別詳細（ANA + FUKUSHO）】')
+    print(f'月       | 穴馬ANA               | FUKUSHO          | 損益      | 再投入   | 軍資金')
+    print('-' * 90)
     for r in monthly_rows:
         a_roi    = r['a_ret'] / r['a_invest'] * 100 if r['a_invest'] else 0
-        t_profit = (r['k_ret'] + r['a_ret']) - (r['k_invest'] + r['a_invest'])
+        f_roi    = r['f_ret'] / r['f_invest'] * 100 if r['f_invest'] else 0
+        t_profit = (r['k_ret'] + r['a_ret'] + r['f_ret']) - (r['k_invest'] + r['a_invest'] + r['f_invest'])
         sign     = '+' if t_profit >= 0 else ''
         ri       = r.get('reinvest', 0)
+        f_str    = f'{r["f_hit"]}的中/{r["f_invest"]//1000}k→{r["f_ret"]//1000}k({f_roi:.0f}%)' if r['f_invest'] else '---'
         print(f'{r["ym"]} | {r["a_hit"]}的中/{r["a_invest"]//1000}k→{r["a_ret"]//1000}k({a_roi:.0f}%) | '
-              f'{sign}¥{abs(t_profit)//1000}k | +¥{ri//1000}k | ¥{r["cap"]:,}')
+              f'{f_str:<18} | {sign}¥{abs(t_profit)//1000}k | +¥{ri//1000}k | ¥{r["cap"]:,}')
 
 if __name__ == '__main__':
     data_dir = sys.argv[1] if len(sys.argv) > 1 else 'data'
     print(f'[backtest_csv] data_dir={data_dir}')
     races  = load_csv_data(data_dir)
     jstats = load_jstats(data_dir)
-    sk, sa, sw, su, sut, s3p, s3t, monthly = run_backtest(races, jstats)
-    print_results(sk, sa, sw, su, sut, s3p, s3t, monthly)
+    sk, sa, sf, sw, su, sut, s3p, s3t, monthly = run_backtest(races, jstats)
+    print_results(sk, sa, sf, sw, su, sut, s3p, s3t, monthly)

@@ -37,6 +37,7 @@ CSV_COLUMNS = [
     'race_id','race_name','grade','距離','コース','馬場状態',
     '着順','枠番','馬番','馬名','性齢','斤量','騎手',
     'タイム','着差','通過順','上がり3F','単勝オッズ','人気','馬体重',
+    '調教師','調教タイム',
     '年','場コード','回次','日次','レース番号',
     '単勝払戻','複勝払戻','馬連払戻','馬単払戻','ワイド払戻','三連複払戻','三連単払戻'
 ]
@@ -297,6 +298,8 @@ def fetch_race_rows(race_id: str) -> list:
                     '単勝オッズ': get(16),
                     '人気':       get(17),
                     '馬体重':     get(18),
+                    '調教師':     re.sub(r'^\[[東西]\]', '', get(22)).strip(),
+                    '調教タイム': get(19),
                     '年':         year,
                     '場コード':   venue_c,
                     '回次':       kai,
@@ -364,6 +367,11 @@ def fetch_month(year: int, month: int, skip_existing: bool = True):
     ym          = f'{year}{str(month).zfill(2)}'
     output_path = os.path.join(DATA_DIR, f'raceresults_{ym}.csv')
     os.makedirs(DATA_DIR, exist_ok=True)
+
+    # --no-skip 時は既存ファイルを削除して全件再取得
+    if not skip_existing and os.path.exists(output_path):
+        os.remove(output_path)
+        print(f'[fetch_month] 既存ファイル削除: {output_path}')
 
     # 取得済みrace_idを確認
     existing_ids = set()
