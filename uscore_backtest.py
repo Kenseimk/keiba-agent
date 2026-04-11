@@ -27,6 +27,25 @@ from uscore import (
     _parse_bw, _parse_avg_pos, _parse_margin,
 )
 
+
+def _parse_time(s: str):
+    """タイム文字列を秒数に変換: '1:12.3' → 72.3"""
+    if not s: return None
+    s = s.strip()
+    if ':' in s:
+        parts = s.split(':')
+        try: return int(parts[0]) * 60 + float(parts[1])
+        except: return None
+    try: return float(s)
+    except: return None
+
+
+def _parse_first_pos(s: str):
+    """通過順の最初の位置: '3-4-5' → 3.0"""
+    if not s: return None
+    try: return float(s.split('-')[0])
+    except: return None
+
 DATA_DIR         = 'data'
 DEFAULT_START    = '202501'
 DEFAULT_END      = '202603'
@@ -148,17 +167,59 @@ def _build_race_records(race_id: str, info: dict) -> dict[str, dict]:
     agari_rank_map = {name: i + 1 for i, (name, _) in enumerate(agari_list)}
     n_agari = len(agari_list)
 
+    # タイム順位 (1=最速)
+    dist_val = _int(rows[0].get('距離'), 1800) if rows else 1800
+    time_list = [(h['馬名'], _parse_time(h.get('タイム')))
+                 for h in rows if _parse_time(h.get('タイム')) is not None]
+    time_list.sort(key=lambda x: x[1])
+    time_rank_map = {name: i + 1 for i, (name, _) in enumerate(time_list)}
+    n_timed = len(time_list)
+
+    # 区間速度の計算: 前半 / 後半(上がり3F=600m) ランク
+    def _calc_pace(t_sec, agari_sec, dist):
+        """前半速度・後半速度・ペース差を返す"""
+        if t_sec is None or agari_sec is None or t_sec <= 0 or agari_sec <= 0:
+            return None, None, None
+        front_dist = max(dist - 600, 0)
+        front_sec  = t_sec - agari_sec
+        if front_sec <= 0 or front_dist <= 0:
+            return None, None, None
+        front_spd = front_dist / front_sec   # m/s 前半
+        late_spd  = 600.0 / agari_sec        # m/s 後半
+        pace_gap  = late_spd - front_spd     # 正=末脚型、負=先行型
+        return front_spd, late_spd, pace_gap
+
+    # 各馬の前半/後半速度を事前計算してランク付け
+    pace_data = {}
+    for h in rows:
+        name_h = h.get('馬名', '')
+        t   = _parse_time(h.get('タイム'))
+        ag  = _float(h.get('上がり3F'))
+        fs, ls, pg = _calc_pace(t, ag, dist_val)
+        pace_data[name_h] = (fs, ls, pg)
+
+    front_speeds = [(n, v[0]) for n, v in pace_data.items() if v[0] is not None]
+    late_speeds  = [(n, v[1]) for n, v in pace_data.items() if v[1] is not None]
+    front_speeds.sort(key=lambda x: -x[1])  # 大=速い
+    late_speeds.sort(key=lambda x: -x[1])
+    front_rank_map = {n: i + 1 for i, (n, _) in enumerate(front_speeds)}
+    late_rank_map  = {n: i + 1 for i, (n, _) in enumerate(late_speeds)}
+    n_pace = len(front_speeds)
+
     records = {}
     for h in rows:
         rank = _int(h.get('着順'))
         if not rank:
             continue
+        name_h = h.get('馬名', '')
         venue_raw  = (h.get('場コード') or '').strip()
         venue_code = venue_raw.zfill(2) if venue_raw else (
             race_id[4:6] if len(race_id) >= 6 else '00')
         bw_raw = h.get('馬体重', '')
         bw_val = _float(re.sub(r'\(.*\)', '', bw_raw).strip()) if bw_raw else None
-        records[h['馬名']] = {
+        t_sec  = _parse_time(h.get('タイム'))
+        fs, ls, pg = pace_data.get(name_h, (None, None, None))
+        records[name_h] = {
             'race_id':        race_id,
             'race_ym':        file_ym,
             'venue_code':     venue_code,
@@ -168,9 +229,10 @@ def _build_race_records(race_id: str, info: dict) -> dict[str, dict]:
             'odds':           _float(h.get('単勝オッズ')),
             'pop':            _int(h.get('人気'), 0),
             'agari':          _float(h.get('上がり3F')),
-            'agari_rank':     agari_rank_map.get(h.get('馬名', ''), -1),
+            'agari_rank':     agari_rank_map.get(name_h, -1),
             'agari_field':    n_agari,
             'avg_pos':        _parse_avg_pos(h.get('通過順', '')),
+            'first_pos':      _parse_first_pos(h.get('通過順', '')),
             'bw_chg':         _parse_bw(h.get('馬体重', '')),
             'bw':             bw_val,
             'weight_carried': _float(h.get('斤量')),
@@ -181,6 +243,17 @@ def _build_race_records(race_id: str, info: dict) -> dict[str, dict]:
             'gate_num':       _int(h.get('枠番'), 0),
             'grade':          ((h.get('grade') or '').strip()
                               or _infer_grade_from_name(h.get('race_name', ''))),
+            'race_time':      t_sec,
+            'speed_mps':      (dist_val / t_sec) if t_sec and t_sec > 0 else None,
+            'time_rank':      time_rank_map.get(name_h, -1),
+            'n_timed':        n_timed,
+            # ── 区間速度 ──
+            'front_speed':    fs,
+            'late_speed':     ls,
+            'pace_gap':       pg,
+            'front_rank':     front_rank_map.get(name_h, -1),
+            'late_rank':      late_rank_map.get(name_h, -1),
+            'n_pace':         n_pace,
         }
     return records
 

@@ -245,11 +245,27 @@ def load_uscore_db(data_dir: str = 'data') -> dict:
 # ══════════════════════════════════════════════════════
 
 def f_ability(history: list) -> float:
-    """能力指数: 近走着順を指数減衰で加重平均"""
-    PTS = {1: 10.0, 2: 8.5, 3: 7.0, 4: 5.5, 5: 4.5}
+    """
+    能力指数 v2: グレード補正 × 打ち負かし率
+    スコア = グレード基準点 + (打ち負かし率 - 0.5) × 3.0
+    打ち負かし率 = (出走頭数 - 着順) / (出走頭数 - 1)  [0=最下位, 1=1着]
+    """
+    GRADE_BASE = {
+        'G1': 8.5, 'G2': 7.5, 'G3': 7.0,
+        'L': 7.0, 'OP': 6.5, 'オープン': 6.5,
+        '3勝': 6.0, '2勝': 5.5, '1勝': 5.0,
+        '未勝利': 4.5, '新馬': 4.5,
+    }
+    SPREAD = 3.0
+
     def pts(rec):
-        r = rec.get('rank', 99)
-        return PTS.get(r, clamp(4.0 - (r - 6) * 0.4, 0, 4))
+        rank = rec.get('rank', 99)
+        n    = max(rec.get('field_size', 12), 2)
+        grade = rec.get('grade', '')
+        base  = GRADE_BASE.get(grade, 5.0)
+        beat  = (n - rank) / (n - 1)           # 0.0〜1.0
+        return clamp(base + (beat - 0.5) * SPREAD)
+
     v = weighted_avg(history, pts)
     return v if v is not None else 5.0
 
@@ -291,24 +307,39 @@ def build_trainer_stats(horse_db: dict) -> dict:
     戻り値: {trainer: {'n': 出走数, 'wr': 勝率, 'pr': 複勝率}}
     """
     from collections import defaultdict
-    stats = defaultdict(lambda: {'n': 0, 'wins': 0, 'places': 0})
+
+    def _dist_band(d):
+        if d <= 1400: return 'sp'
+        if d <= 1800: return 'mi'
+        if d <= 2200: return 'md'
+        return 'lo'
+
+    stats = defaultdict(lambda: {
+        'n': 0, 'wins': 0, 'places': 0,
+        'dist': defaultdict(lambda: {'n': 0, 'wins': 0}),
+    })
     for name, records in horse_db.items():
         for rec in records:
             t = rec.get('trainer', '').strip()
             if not t:
                 continue
+            rank = rec.get('rank', 99)
             stats[t]['n'] += 1
-            if rec.get('rank') == 1:
-                stats[t]['wins'] += 1
-            if rec.get('rank', 99) <= 3:
-                stats[t]['places'] += 1
+            if rank == 1:      stats[t]['wins']   += 1
+            if rank <= 3:      stats[t]['places']  += 1
+            band = _dist_band(rec.get('dist', 1800))
+            stats[t]['dist'][band]['n'] += 1
+            if rank == 1: stats[t]['dist'][band]['wins'] += 1
+
     result = {}
     for t, s in stats.items():
         n = s['n']
+        dist_wr = {b: v['wins'] / v['n'] for b, v in s['dist'].items() if v['n'] >= 10}
         result[t] = {
-            'n':  n,
-            'wr': s['wins']  / n if n > 0 else 0.0,
-            'pr': s['places'] / n if n > 0 else 0.0,
+            'n':       n,
+            'wr':      s['wins']  / n if n > 0 else 0.0,
+            'pr':      s['places'] / n if n > 0 else 0.0,
+            'dist_wr': dist_wr,
         }
     return result
 
@@ -330,10 +361,11 @@ def _lookup_jockey_stats(jockey: str, jstats: dict):
     return None
 
 
-def f_jockey(jockey: str, jstats) -> float:
+def f_jockey(jockey: str, jstats, course: str = '芝') -> float:
     """
-    騎手スコア: jstats (DataFrame or dict) から評価 (0〜10)
-    dict形式: {jockey_name: {'n': 出走数, 'wr': 勝率, 'pr': 複勝率}}
+    騎手スコア v2: コース別・直近重視の勝率で評価 (0〜10)
+    - 芝/ダート別勝率を使用
+    - 直近12ヶ月を重視した加重勝率 (build_jockey_stats v2 と対応)
 
     スコア目安:
       ルメール (wr≈0.25)  → ~9.5
@@ -348,42 +380,122 @@ def f_jockey(jockey: str, jstats) -> float:
         if jockey in jstats.index:
             return clamp(float(jstats.loc[jockey, 'j_score']))
         return 4.5
-    # dict形式 (新: build_jockey_stats の戻り値)
+    # dict形式 (新: build_jockey_stats v2 の戻り値)
     stats = _lookup_jockey_stats(jockey, jstats)
     if not stats or stats.get('n', 0) < 20:
         return 4.5
-    wr = stats.get('wr', 0.0)
+
+    is_dirt = 'ダ' in str(course)
+    wr_key  = 'wr_dirt' if is_dirt else 'wr_turf'
+    wr = stats.get(wr_key, stats.get('wr', 0.0))
     pr = stats.get('pr', 0.0)
-    w  = min(stats['n'] / 200.0, 1.0)
-    # wr 0.25 → ~10, wr 0.07 → ~4.5, wr 0.03 → ~2
+
+    w   = min(stats['n'] / 200.0, 1.0)
     raw = wr * 30.0 + pr * 8.0
     return clamp(w * raw + (1 - w) * 4.5)
 
 
 def build_jockey_stats(horse_db: dict) -> dict:
     """
-    horse_db から騎手別の勝率・複勝率を集計する。
-    戻り値: {jockey: {'n': 出走数, 'wr': 勝率, 'pr': 複勝率}}
+    騎手別成績を集計 v2
+    - 直近12ヶ月の成績を重視 (60%) + 全期間 (40%)
+    - 芝 / ダート別勝率を分けて保持
+    戻り値: {jockey: {'n', 'wr', 'pr', 'wr_turf', 'wr_dirt', 'n_recent'}}
     """
     from collections import defaultdict
-    stats = defaultdict(lambda: {'n': 0, 'wins': 0, 'places': 0})
+
+    # horse_db内の最新YMを取得
+    all_yms = [r['race_ym'] for recs in horse_db.values() for r in recs if r.get('race_ym')]
+    latest_ym = max(all_yms) if all_yms else '202412'
+    # 12ヶ月前のYM
+    ly, lm = int(latest_ym[:4]), int(latest_ym[4:])
+    lm -= 12
+    if lm <= 0: lm += 12; ly -= 1
+    cutoff_ym = f'{ly:04d}{lm:02d}'
+
+    def _dist_band(d):
+        if d <= 1400: return 'sp'
+        if d <= 1800: return 'mi'
+        if d <= 2200: return 'md'
+        return 'lo'
+
+    zero = lambda: {'n': 0, 'wins': 0, 'places': 0}
+    stats = defaultdict(lambda: {
+        'all': zero(), 'recent': zero(),
+        'turf': zero(), 'dirt': zero(),
+        'dist':    defaultdict(lambda: {'n': 0, 'wins': 0}),
+        'venue':   defaultdict(lambda: {'n': 0, 'wins': 0}),
+        'trainer': defaultdict(lambda: {'n': 0, 'wins': 0}),
+    })
+
     for name, records in horse_db.items():
         for rec in records:
             j = rec.get('jockey', '').strip()
-            if not j:
-                continue
-            stats[j]['n'] += 1
-            if rec.get('rank') == 1:
-                stats[j]['wins'] += 1
-            if rec.get('rank', 99) <= 3:
-                stats[j]['places'] += 1
+            if not j: continue
+            rank = rec.get('rank', 99)
+            ym   = rec.get('race_ym', '')
+            is_dirt = 'ダ' in str(rec.get('course', ''))
+
+            for bucket in ['all']:
+                stats[j][bucket]['n'] += 1
+                if rank == 1:      stats[j][bucket]['wins']   += 1
+                if rank <= 3:      stats[j][bucket]['places'] += 1
+
+            if ym >= cutoff_ym:
+                stats[j]['recent']['n'] += 1
+                if rank == 1:  stats[j]['recent']['wins']   += 1
+                if rank <= 3:  stats[j]['recent']['places'] += 1
+
+            key = 'dirt' if is_dirt else 'turf'
+            stats[j][key]['n'] += 1
+            if rank == 1:  stats[j][key]['wins']   += 1
+            if rank <= 3:  stats[j][key]['places'] += 1
+
+            band = _dist_band(rec.get('dist', 1800))
+            stats[j]['dist'][band]['n'] += 1
+            if rank == 1: stats[j]['dist'][band]['wins'] += 1
+
+            venue = rec.get('venue_code', '')
+            if venue:
+                stats[j]['venue'][venue]['n'] += 1
+                if rank == 1: stats[j]['venue'][venue]['wins'] += 1
+
+            trainer = rec.get('trainer', '').strip()
+            if trainer:
+                stats[j]['trainer'][trainer]['n'] += 1
+                if rank == 1: stats[j]['trainer'][trainer]['wins'] += 1
+
     result = {}
     for j, s in stats.items():
-        n = s['n']
+        a  = s['all'];    na = a['n']
+        rc = s['recent']; nr = rc['n']
+        tu = s['turf'];   nt = tu['n']
+        di = s['dirt'];   nd = di['n']
+
+        wr_all  = a['wins']  / na if na else 0.0
+        pr_all  = a['places'] / na if na else 0.0
+        wr_rec  = rc['wins'] / nr if nr else wr_all
+        pr_rec  = rc['places'] / nr if nr else pr_all
+
+        # 直近重み: 50戦以上あれば直近60%を全面採用
+        alpha = min(nr / 50.0, 1.0)
+        wr = alpha * wr_rec + (1 - alpha) * wr_all
+        pr = alpha * pr_rec + (1 - alpha) * pr_all
+
+        dist_wr    = {b: v['wins'] / v['n'] for b, v in s['dist'].items()    if v['n'] >= 10}
+        venue_wr   = {v: d['wins'] / d['n'] for v, d in s['venue'].items()   if d['n'] >= 10}
+        trainer_wr = {t: d['wins'] / d['n'] for t, d in s['trainer'].items() if d['n'] >= 5}
+
         result[j] = {
-            'n':  n,
-            'wr': s['wins']  / n if n > 0 else 0.0,
-            'pr': s['places'] / n if n > 0 else 0.0,
+            'n':          na,
+            'wr':         wr,
+            'pr':         pr,
+            'wr_turf':    tu['wins']  / nt if nt >= 5 else wr,
+            'wr_dirt':    di['wins']  / nd if nd >= 5 else wr,
+            'n_recent':   nr,
+            'dist_wr':    dist_wr,
+            'venue_wr':   venue_wr,
+            'trainer_wr': trainer_wr,
         }
     return result
 
@@ -489,30 +601,79 @@ def f_rotation(history: list, current_ym: str) -> float:
 
 
 def f_prev_content(history: list) -> float:
-    """前走内容: 着順 + 着差の複合評価"""
+    """
+    前走内容 v2: トレンド × グレード補正マージン
+    f_ability (5走平均) と重複しない「最新の変化」を評価する
+
+    構成:
+      1. グレード補正マージン: 前走の着差をグレード文脈で評価
+      2. 着順トレンド: 直近2走の打ち負かし率の変化 (改善/悪化)
+    """
     if not history: return 5.0
-    rec    = history[0]
-    rank   = rec.get('rank', 99)
-    margin = rec.get('margin', 10.0)
-    PTS = {1: 10.0, 2: 8.5, 3: 7.0, 4: 5.5, 5: 4.5}
-    base  = PTS.get(rank, clamp(4.0 - (rank - 6) * 0.4, 0, 4))
-    if   margin <= 0.2: bonus =  1.0
-    elif margin <= 0.5: bonus =  0.5
-    elif margin <= 1.0: bonus =  0.0
-    elif margin <= 2.0: bonus = -0.5
-    else:               bonus = -1.5
-    return clamp(base + bonus)
+
+    GRADE_BASE = {
+        'G1': 8.5, 'G2': 7.5, 'G3': 7.0,
+        'L': 7.0, 'OP': 6.5, 'オープン': 6.5,
+        '3勝': 6.0, '2勝': 5.5, '1勝': 5.0,
+        '未勝利': 4.5, '新馬': 4.5,
+    }
+
+    rec0  = history[0]
+    rank0 = rec0.get('rank', 99)
+    n0    = max(rec0.get('field_size', 12), 2)
+    beat0 = (n0 - rank0) / (n0 - 1)          # 0〜1 (1=1着, 0=最下位)
+    grade = rec0.get('grade', '')
+    base  = GRADE_BASE.get(grade, 5.0)
+    margin = rec0.get('margin', 5.0) or 5.0
+
+    # グレード補正マージンスコア
+    if rank0 == 1:
+        m_score = base + 1.5                  # 勝者ボーナス
+    elif margin <= 0.2: m_score = base + 1.0  # ハナ差惜敗
+    elif margin <= 0.5: m_score = base + 0.5
+    elif margin <= 1.0: m_score = base
+    elif margin <= 2.0: m_score = base - 0.5
+    else:               m_score = base - 1.5  # 完敗
+
+    # トレンドボーナス (直近2走の打ち負かし率の差)
+    if len(history) >= 2:
+        rec1  = history[1]
+        n1    = max(rec1.get('field_size', 12), 2)
+        beat1 = (n1 - rec1.get('rank', 99)) / (n1 - 1)
+        trend_bonus = clamp((beat0 - beat1) * 2.0, -1.5, 1.5)
+    else:
+        trend_bonus = 0.0
+
+    return clamp(m_score + trend_bonus)
 
 
 def f_prev_level(history: list) -> float:
     """
-    前走レベル: グレード列のみで評価。データなし=5.0(中立)
-    G1=10, G2=8.5 ... 未勝利=3.0
-    フィールドサイズは使わない（頭数≠レベルのため）
+    クラス変動: 直近2走のグレード差を評価
+    - 昇級戦 (前走より格上) → 減点 (適応リスク)
+    - 降級戦 (前走より格下) → 加点 (格上経験あり)
+    - 同クラス → 中立
+    データ不足時は前走グレードのみで評価
     """
+    GRADE_RANK = {
+        '新馬': 0, '未勝利': 1, '1勝': 2, '2勝': 3, '3勝': 4,
+        'OP': 5, 'オープン': 5, 'L': 6, 'G3': 7, 'G2': 8, 'G1': 9,
+    }
     if not history: return 5.0
-    grade = history[0].get('grade', '').strip()
-    return GRADE_SCORE.get(grade, 5.0)
+
+    g0 = GRADE_RANK.get(history[0].get('grade', ''), 3)
+
+    if len(history) >= 2:
+        g1   = GRADE_RANK.get(history[1].get('grade', ''), 3)
+        diff = g0 - g1   # 正=昇級, 負=降級
+        if   diff >= 2:  return 3.5   # 2段階以上昇級 → 厳しい
+        elif diff == 1:  return 4.5   # 1段階昇級
+        elif diff == 0:  return 5.5   # 同クラス継続
+        elif diff == -1: return 6.5   # 1段階降級 → 格上経験
+        else:            return 7.5   # 2段階以上降級 → 余裕
+    else:
+        # 前走のみ: 絶対グレードで中立評価
+        return clamp(g0 * 0.6 + 3.0)
 
 
 def f_prev_position(history: list) -> float:
@@ -843,7 +1004,7 @@ def calc_horse_factors(
         'ability':          f_ability(history)                       if has else fb,
         'acceleration':     f_acceleration(history)                  if has else fb * 0.9,
         'training':         f_training(name, oikiri_db),
-        'jockey':           f_jockey(jockey, jockey_stats if jockey_stats is not None else jstats),
+        'jockey':           f_jockey(jockey, jockey_stats if jockey_stats is not None else jstats, course),
         'trainer':          f_trainer(trainer, trainer_stats),
         'course_fit':       f_course_fit(name, course, dist, dc_db),
         'prev_content':     f_prev_content(history)                  if has else fb * 0.9,
