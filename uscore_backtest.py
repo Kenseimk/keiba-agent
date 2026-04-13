@@ -13,7 +13,7 @@ uscore_backtest.py  U score ウォークフォワード・バックテスト
   python uscore_backtest.py --verbose --rnum 8 9 10 11
 """
 
-import os, sys, io, glob, csv, re, argparse
+import os, sys, io, glob, csv, re, argparse, json
 from collections import defaultdict
 
 try:
@@ -310,6 +310,23 @@ def make_race_info(info: dict) -> dict:
 
 
 # ══════════════════════════════════════════════════════
+# oikiri データ読み込み
+# ══════════════════════════════════════════════════════
+
+def load_oikiri_for_month(ym: str, data_dir: str = DATA_DIR) -> dict:
+    """
+    oikiri_{ym}.json を読み込み {race_id: {horse_name: {...}}} を返す。
+    ファイルがない場合は {}
+    """
+    path = os.path.join(data_dir, f'oikiri_{ym}.json')
+    if not os.path.exists(path):
+        return {}
+    with open(path, encoding='utf-8') as f:
+        data = json.load(f)
+    return data.get('races', data)
+
+
+# ══════════════════════════════════════════════════════
 # 実績照合
 # ══════════════════════════════════════════════════════
 
@@ -372,6 +389,9 @@ def run_walkforward(
         bet_list   = []   # {'race_id', 'name', 'u_score', 'odds', 'hit': bool}
         skipped_cnt = 0
 
+        # oikiri データ読み込み (月単位)
+        oikiri_month = load_oikiri_for_month(ym)
+
         for race_id in sorted(month_races.keys()):
             info = month_races[race_id]
             race_name = info['race_name']
@@ -397,10 +417,12 @@ def run_walkforward(
 
             # race_info 構築 & スコアリング
             race_info_obj = make_race_info(info)
+            oikiri_db = oikiri_month.get(race_id) or None
             try:
                 results = analyze_race_uscore(
                     race_info_obj, horse_db,
                     jstats=None, dc_db=None,
+                    oikiri_db=oikiri_db,
                 )
             except Exception as e:
                 if verbose:

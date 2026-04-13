@@ -37,7 +37,7 @@ os.environ['PYTHONIOENCODING'] = 'utf-8'
 from collections import defaultdict
 from itertools import permutations
 
-from uscore_backtest import load_all_csv_races, _add_races_to_horse_db, make_race_info, _build_race_records
+from uscore_backtest import load_all_csv_races, _add_races_to_horse_db, make_race_info, _build_race_records, load_oikiri_for_month
 from uscore import (
     analyze_race_uscore, build_trainer_stats, build_jockey_stats,
     should_exclude_uscore,
@@ -55,6 +55,7 @@ BET             = 100
 DEFAULT_HONMEI_WP_MIN   = 15.0   # チューニング: 20.0 → 15.0
 DEFAULT_HONMEI_ODDS_MAX = 4.0
 DEFAULT_WP_SUM_MIN      = 35.0   # チューニング: 45.0 → 35.0
+DEFAULT_INV_SUM3_MIN    = 0.0    # 0.0 = 無効 (荒れ除外フィルター: 高いほど本命集中レースのみ)
 
 # ── チューニング / ブラインド期間 ─────────────────
 TUNE_START  = '202301'   # 2年分 (2023-2024) でチューニング
@@ -68,6 +69,7 @@ GRID = {
     'honmei_odds_max': [3.5, 4.0, 4.5, 5.0],
     'wp_sum_min':      [35.0, 40.0, 45.0, 50.0, 55.0],
     'n_aite':          [3, 4, 5],
+    'inv_sum3_min':    [0.0, 0.75, 0.80, 0.85],  # 上位3頭の市場集中度下限
 }
 MIN_BETS = 30   # チューニング期間が2年に増えたので基準も引き上げ
 
@@ -102,9 +104,17 @@ def load_sanrentan(data_dir, start_ym, end_ym):
     return db
 
 
+def _calc_inv_sum3(horse_list: list) -> float:
+    """上位3人気馬の 1/odds 合計 (高=本命集中, 低=拮抗)"""
+    pop_sorted = sorted(horse_list, key=lambda h: h['pop'])[:3]
+    vals = [1.0 / h['odds'] for h in pop_sorted if h['odds'] and h['odds'] > 0]
+    return sum(vals) if vals else 0.0
+
+
 def _run_core(races, horse_db, trainer_stats, jockey_stats, sanrentan_db,
               test_start, test_end,
               honmei_wp_min, honmei_odds_max, wp_sum_min, n_aite=N_AITE,
+              inv_sum3_min=DEFAULT_INV_SUM3_MIN,
               walkforward=True, verbose=False):
     """
     コア評価ループ。monthly dict と total dict を返す。
@@ -132,6 +142,9 @@ def _run_core(races, horse_db, trainer_stats, jockey_stats, sanrentan_db,
         t_stats = build_trainer_stats(horse_db) if walkforward else trainer_stats
         j_stats = build_jockey_stats(horse_db)  if walkforward else jockey_stats
 
+        # oikiri データ読み込み (月単位)
+        oikiri_month = load_oikiri_for_month(ym)
+
         for race_id in sorted(month_races.keys()):
             info = month_races[race_id]
             if should_exclude_uscore(info['race_name']):
@@ -145,13 +158,21 @@ def _run_core(races, horse_db, trainer_stats, jockey_stats, sanrentan_db,
             if info['n_field'] > MAX_FIELD:
                 continue
 
+            # 荒れ除外フィルター: 上位3頭の市場集中度が低いレースを除外
+            if inv_sum3_min > 0:
+                inv3 = _calc_inv_sum3(info['horse_list'])
+                if inv3 < inv_sum3_min:
+                    continue
+
             race_obj = make_race_info(info)
+            oikiri_db = oikiri_month.get(race_id) or None
             try:
                 sc = analyze_race_uscore(
                     race_obj, horse_db, None, None,
                     trainer_stats=t_stats,
                     jockey_stats=j_stats,
                     market_alpha=MARKET_ALPHA,
+                    oikiri_db=oikiri_db,
                 )
             except:
                 continue
@@ -274,11 +295,121 @@ def run(test_start='202501', test_end='202603',
     _print_monthly(monthly, total)
 
 
+def _precompute_tune_cache(races, horse_db, trainer_stats, jockey_stats):
+    """
+    チューニング期間の全対象レースについて analyze_race_uscore を一度だけ実行し、
+    グリッドサーチで使うキャッシュを返す。
+
+    戻り値: [
+      {
+        'race_id', 'ym', 'rnum', 'n_field', 'inv_sum3',
+        'wp_map': {name: wp}, 'odds_map': {name: odds}, 'uma_map': {name: umaban},
+        'sorted_wp': [...],  # win_prob 降順
+      }, ...
+    ]
+    """
+    cache = []
+    tune_months = sorted(set(
+        info['file_ym'] for info in races.values()
+        if TUNE_START <= info['file_ym'] <= TUNE_END
+    ))
+    for ym in tune_months:
+        month_races = {rid: info for rid, info in races.items()
+                       if info['file_ym'] == ym}
+        oikiri_month = load_oikiri_for_month(ym)
+        for race_id in sorted(month_races.keys()):
+            info = month_races[race_id]
+            if should_exclude_uscore(info['race_name']):
+                continue
+            if all(h['odds'] == 0.0 for h in info['horse_list']):
+                continue
+            rnum = int(race_id[-2:])
+            if not (RNUM_MIN <= rnum <= RNUM_MAX):
+                continue
+            if info['n_field'] > MAX_FIELD:
+                continue
+            inv3 = _calc_inv_sum3(info['horse_list'])
+            race_obj = make_race_info(info)
+            oikiri_db = oikiri_month.get(race_id) or None
+            try:
+                sc = analyze_race_uscore(
+                    race_obj, horse_db, None, None,
+                    trainer_stats=trainer_stats,
+                    jockey_stats=jockey_stats,
+                    market_alpha=MARKET_ALPHA,
+                    oikiri_db=oikiri_db,
+                )
+            except Exception:
+                continue
+            if not sc:
+                continue
+            wp_map   = {h['name']: h['win_prob'] for h in sc}
+            odds_map = {h['name']: h['odds']     for h in info['horse_list']}
+            uma_map  = {h['name']: h['umaban']   for h in info['horse_list']}
+            sorted_wp = sorted(sc, key=lambda h: h['win_prob'], reverse=True)
+            cache.append({
+                'race_id':  race_id,
+                'ym':       ym,
+                'rnum':     rnum,
+                'n_field':  info['n_field'],
+                'inv_sum3': inv3,
+                'wp_map':   wp_map,
+                'odds_map': odds_map,
+                'uma_map':  uma_map,
+                'sorted_wp': sorted_wp,
+            })
+    return cache
+
+
+def _grid_eval_cached(cache, san_tune,
+                       honmei_wp_min, honmei_odds_max, wp_sum_min, n_aite,
+                       inv_sum3_min):
+    """キャッシュ済み uscore 結果に対してパラメータフィルターを適用してROIを返す"""
+    cost = 0; ret = 0; races = 0; hits = 0
+    for r in cache:
+        if inv_sum3_min > 0 and r['inv_sum3'] < inv_sum3_min:
+            continue
+        sorted_wp = r['sorted_wp']
+        wp_map    = r['wp_map']
+        odds_map  = r['odds_map']
+        uma_map   = r['uma_map']
+        race_id   = r['race_id']
+
+        hn = sorted_wp[0]['name']
+        rn = sorted_wp[1]['name'] if len(sorted_wp) > 1 else None
+        if not rn:
+            continue
+        if wp_map.get(hn, 0) < honmei_wp_min:
+            continue
+        if odds_map.get(hn, 99) > honmei_odds_max:
+            continue
+        if wp_map.get(hn, 0) + wp_map.get(rn, 0) < wp_sum_min:
+            continue
+
+        aite = [h['name'] for h in sorted_wp[2:2+n_aite]]
+        u_h  = uma_map.get(hn, '')
+        u_r  = uma_map.get(rn, '')
+        u_a  = [uma_map.get(n, '') for n in aite if uma_map.get(n, '')]
+        if not u_h or not u_r or not u_a:
+            continue
+
+        tix = set()
+        for perm in permutations([u_h, u_r]):
+            for a in u_a:
+                tix.add((*perm, a))
+
+        san  = san_tune.get(race_id, {})
+        c    = len(tix) * BET
+        rv   = sum(san.get(t, 0) * BET // 100 for t in tix)
+        cost += c; ret += rv; races += 1; hits += int(rv > 0)
+
+    return {'races': races, 'cost': cost, 'ret': ret, 'hits': hits}
+
+
 def tune_and_blind():
     """
     チューニング期間でグリッドサーチ → ブラインド期間で検証。
-    パラメータはチューニング期間のデータのみで決定し、
-    ブラインド期間は一切参照しない。
+    uscore はチューニング期間で1回だけ計算してキャッシュ (高速化)。
     """
     import itertools
 
@@ -303,8 +434,13 @@ def tune_and_blind():
     san_tune  = load_sanrentan('data', TUNE_START, TUNE_END)
     san_blind = load_sanrentan('data', BLIND_START, BLIND_END)
 
-    # ── STEP 1: グリッドサーチ (チューニング期間のみ) ──────────────
-    print('【STEP 1】チューニング期間グリッドサーチ ...')
+    # ── STEP 1: uscore キャッシュ構築 ─────────────────────────────
+    print('【STEP 1a】チューニング期間 uscore キャッシュ構築 ...', flush=True)
+    tune_cache = _precompute_tune_cache(races, horse_db, trainer_stats, jockey_stats)
+    print(f'  対象レース: {len(tune_cache):,}R\n')
+
+    # ── STEP 1b: グリッドサーチ ────────────────────────────────────
+    print('【STEP 1b】グリッドサーチ ...')
     keys   = list(GRID.keys())
     combos = list(itertools.product(*[GRID[k] for k in keys]))
     print(f'  候補数: {len(combos)}通り  (最低ベット数 ≥ {MIN_BETS}R)\n')
@@ -316,13 +452,10 @@ def tune_and_blind():
 
     for combo in combos:
         params = dict(zip(keys, combo))
-        # グリッドサーチは相対比較なので horse_db 固定 (walkforward=False)
-        _, total = _run_core(
-            races, horse_db, trainer_stats, jockey_stats, san_tune,
-            TUNE_START, TUNE_END,
+        total = _grid_eval_cached(
+            tune_cache, san_tune,
             params['honmei_wp_min'], params['honmei_odds_max'], params['wp_sum_min'],
-            n_aite=params['n_aite'],
-            walkforward=False,
+            params['n_aite'], params['inv_sum3_min'],
         )
         n = total['races']; c = total['cost']; r = total['ret']
         roi   = r / c * 100 if c else 0
@@ -335,13 +468,15 @@ def tune_and_blind():
                 best_params = params
 
     results.sort(key=lambda x: x[0], reverse=True)
-    print(f'  {"スコア":>8}  {"ROI":>7}  {"R数":>4}  wp_min  odds_max  wp_sum')
-    print(f'  ' + '-' * 60)
-    for score, roi, n, p in results[:10]:
+    print(f'  {"スコア":>8}  {"ROI":>7}  {"R数":>4}  wp_min  odds_max  wp_sum  inv3_min  aite')
+    print(f'  ' + '-' * 75)
+    for score, roi, n, p in results[:15]:
         print(f'  {score:>7.1f}  {roi:>6.1f}%  {n:>4}  '
               f'{p["honmei_wp_min"]:>5.0f}%  '
               f'{p["honmei_odds_max"]:>7.1f}  '
-              f'{p["wp_sum_min"]:>5.0f}%')
+              f'{p["wp_sum_min"]:>5.0f}%  '
+              f'{p["inv_sum3_min"]:>7.2f}  '
+              f'{p["n_aite"]:>4}')
 
     if not best_params:
         print('\n⚠ チューニング期間に有効なベットがありませんでした。')
@@ -350,6 +485,8 @@ def tune_and_blind():
     print(f'\n  → 最良パラメータ: wp_min={best_params["honmei_wp_min"]}%  '
           f'odds_max={best_params["honmei_odds_max"]}  '
           f'wp_sum={best_params["wp_sum_min"]}%  '
+          f'inv_sum3_min={best_params["inv_sum3_min"]}  '
+          f'n_aite={best_params["n_aite"]}  '
           f'(チューニング ROI {best_roi:.1f}%  スコア {best_score:.1f})')
 
     # ── STEP 2: ブラインド検証 ──────────────────────────────────────
@@ -375,6 +512,7 @@ def tune_and_blind():
         best_params['honmei_odds_max'],
         best_params['wp_sum_min'],
         n_aite=best_params['n_aite'],
+        inv_sum3_min=best_params['inv_sum3_min'],
         walkforward=True,
     )
     _print_monthly(monthly, total)
