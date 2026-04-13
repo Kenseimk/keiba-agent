@@ -1,0 +1,265 @@
+name: fetch-oikiri-history
+
+on:
+  workflow_dispatch:
+    inputs:
+      start_ym:
+        description: '開始年月 YYYYMM (例: 202301)'
+        required: true
+        default: '202305'
+      end_ym:
+        description: '終了年月 YYYYMM (例: 202412)'
+        required: true
+        default: '202412'
+      sleep_sec:
+        description: 'レース間スリープ秒 (デフォルト: 2.5)'
+        required: false
+        default: '2.5'
+      skip_existing:
+        description: '取得済み月をスキップ (true/false)'
+        required: false
+        default: 'true'
+
+jobs:
+  # ─────────────────────────────────────────────
+  # Step1: 取得対象月リストを生成
+  # ─────────────────────────────────────────────
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.gen.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 取得対象月リストを生成
+        id: gen
+        run: |
+          python3 - << 'PYEOF'
+          import os, json
+
+          start = os.environ['START_YM']
+          end   = os.environ['END_YM']
+          skip  = os.environ.get('SKIP_EXISTING', 'true').lower() == 'true'
+
+          # 月リスト生成
+          months = []
+          y, m = int(start[:4]), int(start[4:])
+          ey, em = int(end[:4]), int(end[4:])
+          while (y, m) <= (ey, em):
+              months.append(f'{y:04d}{m:02d}')
+              m += 1
+              if m > 12:
+                  m = 1; y += 1
+
+          # スキップ判定: 取得済み月(頭数>0)を除外
+          if skip:
+              filtered = []
+              for ym in months:
+                  path = f'data/oikiri_{ym}.json'
+                  if os.path.exists(path):
+                      import json as jmod
+                      with open(path, encoding='utf-8') as f:
+                          d = jmod.load(f)
+                      races = d.get('races', d)
+                      n_horses = sum(len(v) for v in races.values())
+                      if n_horses > 0:
+                          print(f'スキップ (取得済み): {ym}')
+                          continue
+                  filtered.append(ym)
+              months = filtered
+
+          print(f'取得対象: {months}')
+          matrix = json.dumps({'ym': months})
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
+              f.write(f'matrix={matrix}\n')
+          PYEOF
+        env:
+          START_YM: ${{ github.event.inputs.start_ym }}
+          END_YM:   ${{ github.event.inputs.end_ym }}
+          SKIP_EXISTING: ${{ github.event.inputs.skip_existing }}
+
+  # ─────────────────────────────────────────────
+  # Step2: 月ごとに並列取得 (別IP → BAN回避)
+  # ─────────────────────────────────────────────
+  fetch:
+    needs: prepare
+    if: ${{ needs.prepare.outputs.matrix != '{"ym":[]}' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 340
+    permissions:
+      contents: write
+    strategy:
+      matrix: ${{ fromJson(needs.prepare.outputs.matrix) }}
+      fail-fast: false
+      max-parallel: 6   # 同時実行数 (IP分散 + GitHub制限考慮)
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: 依存ライブラリのインストール
+        run: |
+          pip install playwright requests python-dotenv
+          playwright install chromium --with-deps
+
+      - name: git設定
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: oikiri取得 (${{ matrix.ym }})
+        id: fetch_oikiri
+        run: |
+          python fetch_oikiri_history.py \
+            --start ${{ matrix.ym }} \
+            --end   ${{ matrix.ym }} \
+            --sleep ${{ github.event.inputs.sleep_sec || '2.5' }}
+
+      - name: 取得結果確認
+        id: check_result
+        run: |
+          python3 - << 'PYEOF'
+          import json, os
+
+          ym   = os.environ['YM']
+          path = f'data/oikiri_{ym}.json'
+
+          if not os.path.exists(path):
+              print(f'[ERROR] {path} が存在しません')
+              with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
+                  f.write('n_races=0\nn_horses=0\nn_eval=0\n')
+              exit(1)
+
+          with open(path, encoding='utf-8') as f:
+              d = json.load(f)
+          races   = d.get('races', d)
+          n_races  = len(races)
+          n_horses = sum(len(v) for v in races.values())
+          n_eval   = sum(1 for r in races.values()
+                         for v in r.values() if v.get('eval'))
+
+          print(f'{ym}: {n_races}R {n_horses}頭 (eval付き:{n_eval}頭)')
+
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
+              f.write(f'n_races={n_races}\n')
+              f.write(f'n_horses={n_horses}\n')
+              f.write(f'n_eval={n_eval}\n')
+          PYEOF
+        env:
+          YM: ${{ matrix.ym }}
+
+      - name: コミット & プッシュ (${{ matrix.ym }})
+        if: steps.check_result.outputs.n_horses != '0'
+        run: |
+          git add data/oikiri_${{ matrix.ym }}.json
+          if git diff --staged --quiet; then
+            echo "変更なし - スキップ"
+          else
+            git commit -m "data: oikiri ${{ matrix.ym }} (${{ steps.check_result.outputs.n_races }}R/${{ steps.check_result.outputs.n_horses }}頭) [skip ci]"
+            for i in 1 2 3 4 5; do
+              git pull --rebase origin ${{ github.ref_name }} && \
+              git push origin ${{ github.ref_name }} && break || \
+              { echo "push失敗 リトライ ${i}/5"; sleep $((i * 15)); }
+            done
+          fi
+
+      - name: Discord通知 (${{ matrix.ym }})
+        if: always()
+        run: |
+          python3 - << 'PYEOF'
+          import requests, os
+
+          webhook = os.environ.get('DISCORD_WEBHOOK', '')
+          if not webhook:
+              exit(0)
+
+          ym       = os.environ['YM']
+          n_races  = os.environ.get('N_RACES',  '0')
+          n_horses = os.environ.get('N_HORSES', '0')
+          n_eval   = os.environ.get('N_EVAL',   '0')
+          status   = os.environ.get('JOB_STATUS', 'unknown')
+
+          if status == 'success' and int(n_horses) > 0:
+              color = 0x2ECC71
+              title = f'✅ oikiri取得完了: {ym}'
+              desc  = f'{n_races}R / {n_horses}頭 (eval付き:{n_eval}頭)'
+          elif status == 'success' and int(n_horses) == 0:
+              color = 0xE67E22
+              title = f'⚠️  oikiri取得: {ym} (0頭 - ブロック?)'
+              desc  = 'データなし。IPブロックの可能性あり。'
+          else:
+              color = 0xE74C3C
+              run_url = (f'https://github.com/{os.environ.get("GITHUB_REPOSITORY","")}'
+                         f'/actions/runs/{os.environ.get("GITHUB_RUN_ID","")}')
+              title = f'❌ oikiri取得エラー: {ym}'
+              desc  = f'[ログを確認する]({run_url})'
+
+          payload = {
+              'embeds': [{'title': title, 'description': desc, 'color': color}]
+          }
+          try:
+              requests.post(webhook, json=payload, timeout=10)
+          except Exception:
+              pass
+          PYEOF
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+          YM:        ${{ matrix.ym }}
+          N_RACES:   ${{ steps.check_result.outputs.n_races }}
+          N_HORSES:  ${{ steps.check_result.outputs.n_horses }}
+          N_EVAL:    ${{ steps.check_result.outputs.n_eval }}
+          JOB_STATUS: ${{ job.status }}
+
+  # ─────────────────────────────────────────────
+  # Step3: 全体サマリ通知
+  # ─────────────────────────────────────────────
+  summary:
+    needs: fetch
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
+
+      - name: 取得結果サマリ
+        run: |
+          python3 - << 'PYEOF'
+          import json, os, glob
+
+          files = sorted(glob.glob('data/oikiri_2*.json'))
+          total_r = total_h = total_e = 0
+          lines = []
+          for path in files:
+              ym = os.path.basename(path).replace('oikiri_','').replace('.json','')
+              if len(ym) != 6: continue  # 日付形式(YYYYMMDD)はスキップ
+              with open(path, encoding='utf-8') as f:
+                  d = json.load(f)
+              races   = d.get('races', d)
+              nr = len(races)
+              nh = sum(len(v) for v in races.values())
+              ne = sum(1 for r in races.values() for v in r.values() if v.get('eval'))
+              total_r += nr; total_h += nh; total_e += ne
+              status = '✅' if nh > 0 else '❌'
+              lines.append(f'{status} {ym}: {nr}R {nh}頭 eval:{ne}頭')
+
+          print('\n'.join(lines))
+          print(f'\n合計: {total_r}R {total_h}頭 eval:{total_e}頭')
+
+          webhook = os.environ.get('DISCORD_WEBHOOK', '')
+          if not webhook: exit(0)
+
+          import requests
+          desc = '\n'.join(lines[-20:])  # 最新20件
+          desc += f'\n\n**合計**: {total_r}R / {total_h}頭 / eval:{total_e}頭'
+          payload = {
+              'embeds': [{'title': '🏇 oikiri収集 全体サマリ',
+                          'description': desc, 'color': 0x3498DB}]
+          }
+          requests.post(webhook, json=payload, timeout=10)
+          PYEOF
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
