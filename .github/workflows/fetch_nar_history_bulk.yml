@@ -1,0 +1,137 @@
+name: Fetch NAR History Bulk (地方競馬)
+
+on:
+  workflow_dispatch:
+    inputs:
+      year_start:
+        description: '取得開始年 (例: 2020)'
+        required: true
+        default: '2020'
+        type: string
+      year_end:
+        description: '取得終了年 (例: 2025)'
+        required: true
+        default: '2025'
+        type: string
+      race_min:
+        description: '取得開始レース番号 (デフォルト: 1)'
+        required: false
+        default: '1'
+        type: string
+      race_max:
+        description: '取得終了レース番号 (デフォルト: 12)'
+        required: false
+        default: '12'
+        type: string
+
+jobs:
+  fetch-nar-bulk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    strategy:
+      matrix:
+        year:
+          - 2015
+          - 2016
+          - 2017
+          - 2018
+          - 2019
+          - 2020
+          - 2021
+          - 2022
+          - 2023
+          - 2024
+          - 2025
+      fail-fast: false
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install requests beautifulsoup4
+
+      - name: Git設定
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Fetch & commit per month (${{ matrix.year }})
+        run: |
+          YEAR=${{ matrix.year }}
+          START=${{ github.event.inputs.year_start }}
+          END=${{ github.event.inputs.year_end }}
+          RACE_MIN=${{ github.event.inputs.race_min || '1' }}
+          RACE_MAX=${{ github.event.inputs.race_max || '12' }}
+
+          if [ "$YEAR" -lt "$START" ] || [ "$YEAR" -gt "$END" ]; then
+            echo "スキップ: ${YEAR}年 (範囲: ${START}〜${END})"
+            exit 0
+          fi
+
+          echo "取得開始: ${YEAR}年 (R${RACE_MIN}〜R${RACE_MAX})"
+
+          for month in $(seq 1 12); do
+            CSV="data/raceresults_nar_${YEAR}$(printf '%02d' $month).csv"
+
+            # 既に取得済みならスキップ
+            if [ -f "$CSV" ] && [ $(wc -l < "$CSV") -gt 1 ]; then
+              echo "スキップ（取得済み）: ${YEAR}年${month}月 ($CSV)"
+              continue
+            fi
+
+            echo "===== ${YEAR}年${month}月 ====="
+            python fetch_nar_history.py \
+              --year $YEAR \
+              --month $month \
+              --race-min $RACE_MIN \
+              --race-max $RACE_MAX \
+              || true
+
+            # 月ごとに即コミット&プッシュ
+            git add "$CSV" || true
+            if ! git diff --staged --quiet; then
+              LINES=$(wc -l < "$CSV" 2>/dev/null || echo 0)
+              git commit -m "data: nar ${YEAR}$(printf '%02d' $month) (${LINES}行) [skip ci]"
+              for i in 1 2 3 4 5; do
+                git pull --rebase origin main && git push origin main && break || \
+                { echo "push失敗 リトライ ${i}/5"; sleep $((i * 15)); }
+              done
+            else
+              echo "変更なし: ${YEAR}年${month}月"
+            fi
+
+            sleep 10
+          done
+
+          echo "取得完了: ${YEAR}年"
+
+      - name: Discord完了通知
+        if: always()
+        run: |
+          python3 - << 'PYEOF'
+          import requests, os, glob
+          webhook = os.environ.get('DISCORD_WEBHOOK_URL', '')
+          if not webhook:
+              exit(0)
+          year = os.environ.get('MATRIX_YEAR', '?')
+          files = sorted(glob.glob(f'data/raceresults_nar_{year}*.csv'))
+          total_rows = 0
+          for f in files:
+              try:
+                  with open(f, encoding='utf-8') as fp:
+                      total_rows += max(0, sum(1 for _ in fp) - 1)
+              except:
+                  pass
+          payload = {'content': (
+              f'🏇 **NAR {year}年** 取得完了\n'
+              f'　{len(files)}ヶ月 / {total_rows:,}行'
+          )}
+          requests.post(webhook, json=payload, timeout=10)
+          PYEOF
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          MATRIX_YEAR: ${{ matrix.year }}
