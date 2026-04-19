@@ -117,7 +117,12 @@ jobs:
           webhook = os.environ.get('DISCORD_WEBHOOK_URL', '')
           if not webhook:
               exit(0)
-          year = os.environ.get('MATRIX_YEAR', '?')
+          year      = os.environ.get('MATRIX_YEAR', '?')
+          year_start = int(os.environ.get('YEAR_START', '0'))
+          year_end   = int(os.environ.get('YEAR_END', '9999'))
+          # 範囲外はスキップ通知しない
+          if int(year) < year_start or int(year) > year_end:
+              exit(0)
           files = sorted(glob.glob(f'data/raceresults_nar_{year}*.csv'))
           total_rows = 0
           for f in files:
@@ -135,3 +140,5 @@ jobs:
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
           MATRIX_YEAR: ${{ matrix.year }}
+          YEAR_START: ${{ github.event.inputs.year_start }}
+          YEAR_END: ${{ github.event.inputs.year_end }}
