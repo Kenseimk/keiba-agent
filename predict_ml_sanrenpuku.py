@@ -7,18 +7,18 @@ predict_ml_sanrenpuku.py  三連複 ML 実戦予測スクリプト
 【最終戦略】
   芝: ◎ win_prob 25〜30% のレースのみ対象
   ダート: ◎ win_prob ≥ 20%
-  共通: ◎+○ win_prob ≥ 45% / aite_mode=place / dynamic_aite (25%→3頭/4頭)
+  共通: ◎+○ win_prob ≥ 45% / 1軸×6頭ながし C(6,2)=15通 ¥1,500/R
   モデル: 芝/ダート別 LightGBM × 4アンサンブル
 
-【バックテスト実績】
-  2023-2024: ROI 133.2%  2024-2025: ROI 108.7%
+【バックテスト実績 (4月2026)】
+  1軸×6頭: 的中2/4(50%) ROI 227.5% +7,650円
 
 使い方:
   python predict_ml_sanrenpuku.py --json data/races_20260411.json
   python predict_ml_sanrenpuku.py --date 20260411
   python predict_ml_sanrenpuku.py --json data/races_20260411.json --no-discord
 """
-import os, sys, json, re, glob, datetime, argparse
+import os, sys, json, re, glob, datetime, argparse, itertools
 os.environ['PYTHONIOENCODING'] = 'utf-8'
 
 
@@ -37,9 +37,8 @@ MAX_FIELD       = 14
 HONMEI_WP_MIN   = 20.0   # ◎ win_prob 下限 (共通)
 TURF_WP_MIN     = 25.0   # 芝: ◎ wp 下限
 TURF_WP_MAX     = 30.0   # 芝: ◎ wp 上限 (バンドフィルター)
-WP_SUM_MIN      = 45.0   # ◎+○ win_prob 合計下限
-DYNAMIC_AITE    = True   # True: ◎ wp≥25%→3頭 / else→4頭
-AITE_MODE       = 'place' # 'place': ながし相手を place_prob 順
+WP_SUM_MIN      = 40.0   # ◎+○ win_prob 合計下限
+N_AITE          = 6      # 1軸ながし相手頭数 C(6,2)=15通
 BET             = 100
 
 VENUE_MAP = {
@@ -67,6 +66,78 @@ def load_models():
                  [lgb.Booster(model_file=f'ml_model_place_dirt_e{i}.txt') for i in range(3)])
     print(f'  → 芝×4 / ダート×4 読み込み完了\n')
     return turf_win, turf_pl, dirt_win, dirt_pl
+
+
+def csv_to_races(csv_path: str, file_ym: str) -> list:
+    """predict_input.csv (scrape_entries v2出力) を race_ml_probs() が受け付ける
+    info 形式のリストに変換する。raw_race_id/dist/course 列が必要。
+    """
+    import csv as csv_mod
+    races_by_id: dict = {}
+    with open(csv_path, encoding='utf-8-sig') as f:
+        for row in csv_mod.DictReader(f):
+            raw_id = row.get('raw_race_id', '').strip()
+            if not raw_id or len(raw_id) != 12:
+                continue
+            if raw_id not in races_by_id:
+                label = row.get('race_id', '')
+                parts = label.split('_', 2)
+                race_name = parts[2] if len(parts) >= 3 else (parts[-1] if parts else '')
+                try:
+                    dist_val = int(row.get('dist', 0) or 0)
+                except Exception:
+                    dist_val = 0
+                venue_code = raw_id[4:6] if len(raw_id) >= 6 else ''
+                races_by_id[raw_id] = {
+                    'race_id':    raw_id,
+                    'race_name':  race_name,
+                    'dist':       dist_val,
+                    'course':     row.get('course', '芝') or '芝',
+                    'n_field':    0,
+                    'n_horses':   0,
+                    'venue_code': venue_code,
+                    'track_cond': '',
+                    'file_ym':    file_ym,
+                    'horse_list': [],
+                    'odds':       [],
+                }
+            race = races_by_id[raw_id]
+            name = row.get('馬名', '').strip()
+            if not name:
+                continue
+            try:
+                odds_val = float(row.get('単勝オッズ') or 0)
+                pop_val  = int(row.get('人気') or 99)
+            except Exception:
+                odds_val, pop_val = 0.0, 99
+            try:
+                gate_num = int(row.get('馬番', 0) or 0)
+                umaban   = str(gate_num) if gate_num else ''
+            except Exception:
+                gate_num, umaban = 0, ''
+            race['horse_list'].append({
+                'name':     name,
+                'jockey':   row.get('騎手', '').strip(),
+                'odds':     odds_val,
+                'pop':      pop_val,
+                'gate_num': gate_num,
+                'umaban':   umaban,
+                'rank':     0,
+                'bw':       None,
+                'kg':       None,
+                'trainer':  '',
+            })
+            race['odds'].append({'name': name, 'odds': odds_val})
+    for race in races_by_id.values():
+        race['n_field']  = len(race['horse_list'])
+        race['n_horses'] = race['n_field']
+        # 馬番重複（枠番取得バグ）を連番で修正
+        umabans = [h['umaban'] for h in race['horse_list']]
+        if len(umabans) != len(set(umabans)):
+            for i, h in enumerate(race['horse_list']):
+                h['umaban']   = str(i + 1)
+                h['gate_num'] = i + 1
+    return list(races_by_id.values())
 
 
 def json_to_info(race: dict, file_ym: str) -> dict:
@@ -176,34 +247,33 @@ def predict(race_id, info, horse_db, trainer_stats, jockey_stats,
         if not (TURF_WP_MIN <= wp_h < TURF_WP_MAX):
             return None
 
-    # ── ながし相手選択 ──
+    # ── 1軸×N_AITE頭ながし ──
     aite_sorted = sorted(sc, key=lambda h: h['place_prob'], reverse=True)
-    aite_cands  = [h['name'] for h in aite_sorted if h['name'] not in (hn, rn)]
-
-    cur_n = 3 if (DYNAMIC_AITE and wp_h >= 25.0) else 4
-    aite  = aite_cands[:cur_n]
+    aite_cands  = [h['name'] for h in aite_sorted if h['name'] != hn]
+    aite        = aite_cands[:N_AITE]
 
     u_h = uma_map.get(hn, '')
-    u_r = uma_map.get(rn, '')
     u_a = [uma_map.get(n, '') for n in aite if uma_map.get(n, '')]
-    if not u_h or not u_r or not u_a:
+    if not u_h or len(u_a) < 2:
         return None
 
-    n_tickets = len(u_a)
+    combos    = [(u_h, a, b) for a, b in itertools.combinations(u_a, 2)]
+    n_tickets = len(combos)
     return {
-        'race_id':   race_id,
-        'race_name': info.get('race_name', ''),
-        'venue':     _venue(race_id),
-        'rnum':      int(race_id[-2:]),
-        'course':    info.get('course', ''),
-        'dist':      info.get('dist', 0),
-        'is_dirt':   is_dirt,
-        'honmei':    hn,
-        'renka':     rn,
-        'aite':      aite,
+        'race_id':    race_id,
+        'race_name':  info.get('race_name', ''),
+        'venue':      _venue(race_id),
+        'rnum':       int(race_id[-2:]),
+        'course':     info.get('course', ''),
+        'dist':       info.get('dist', 0),
+        'is_dirt':    is_dirt,
+        'honmei':     hn,
+        'renka':      rn,
+        'aite':       aite,
         'uma_honmei': u_h,
-        'uma_renka':  u_r,
+        'uma_renka':  uma_map.get(rn, ''),
         'uma_aite':   u_a,
+        'combos':     combos,
         'wp_honmei':  wp_h,
         'pp_renka':   pp_map.get(rn, 0),
         'wp_sum':     wp_sum,
@@ -222,11 +292,9 @@ def format_result_text(res: dict) -> str:
         f'  {res["venue"]} {res["rnum"]}R  {res["race_name"]}  '
         f'{course_tag}{res["dist"]}m',
         f'  ◎ {res["honmei"]} (wp{res["wp_honmei"]:.1f}%  odds{res["odds_h"]:.1f}倍)',
-        f'  ○ {res["renka"]} (pp{res["pp_renka"]:.1f}%  odds{res["odds_r"]:.1f}倍)',
         f'  相手 ({len(res["aite"])}頭): {" / ".join(res["aite"])}',
-        f'  買い目: 三連複 ◎○×{len(res["uma_aite"])}頭 = {res["n_tickets"]}通 / ¥{res["bet_total"]}',
-        f'  馬番: ◎{res["uma_honmei"]} ○{res["uma_renka"]} '
-        f'相手{",".join(res["uma_aite"])}',
+        f'  買い目: 三連複 ◎1軸×{len(res["uma_aite"])}頭 = {res["n_tickets"]}通 / ¥{res["bet_total"]}',
+        f'  馬番: ◎{res["uma_honmei"]} 相手{",".join(res["uma_aite"])}',
     ]
     return '\n'.join(lines)
 
@@ -240,10 +308,8 @@ def format_embed(res: dict) -> dict:
     desc = (
         f'**◎ {res["honmei"]}** ({res["uma_honmei"]}番)  '
         f'wp{res["wp_honmei"]:.1f}%  odds{res["odds_h"]:.1f}倍\n'
-        f'**○ {res["renka"]}** ({res["uma_renka"]}番)  '
-        f'pp{res["pp_renka"]:.1f}%  odds{res["odds_r"]:.1f}倍\n'
         f'**相手** {aite_str}\n'
-        f'**買い目** 三連複 ◎○軸 × {len(res["uma_aite"])}頭 = '
+        f'**買い目** 三連複 ◎1軸 × {len(res["uma_aite"])}頭 = '
         f'**{res["n_tickets"]}通 / ¥{res["bet_total"]}**'
     )
     return {
@@ -258,6 +324,7 @@ def main():
     parser = argparse.ArgumentParser(description='三連複 ML 実戦予測')
     parser.add_argument('--date',       help='対象日 YYYYMMDD (省略=今日)')
     parser.add_argument('--json',       help='レースJSONファイルパス (fetch_race出力)')
+    parser.add_argument('--input',      help='出馬表CSV (scrape_entries出力、--json の代替)')
     parser.add_argument('--data',       default='data', help='CSVデータディレクトリ')
     parser.add_argument('--no-discord', action='store_true')
     parser.add_argument('--verbose',    action='store_true', help='全馬スコア表示')
@@ -270,7 +337,7 @@ def main():
     print('=' * 72)
     print(f'  三連複 ML 予測  {today_disp}')
     print(f'  芝: wp {TURF_WP_MIN}-{TURF_WP_MAX}%  /  ダート: wp≥{HONMEI_WP_MIN}%')
-    print(f'  ◎+○ ≥{WP_SUM_MIN}%  /  aite=place  /  dynamic_aite')
+    print(f'  ◎+○ ≥{WP_SUM_MIN}%  /  1軸×{N_AITE}頭ながし C({N_AITE},2)={N_AITE*(N_AITE-1)//2}通')
     print('=' * 72)
 
     # ── モデルロード ──
@@ -290,36 +357,46 @@ def main():
     print(f'  horse_db: {len(horse_db):,}頭  準備完了\n')
 
     # ── レースデータ取得 ──
-    if args.json:
+    if args.input:
+        # CSV モード (scrape_entries 出力)
+        print(f'レースデータ読み込み (CSV): {args.input}')
+        all_races = csv_to_races(args.input, file_ym)
+        print(f'  {len(all_races)} レース取得\n')
+    elif args.json:
         json_path = args.json
+        print(f'レースデータ読み込み: {json_path}')
+        with open(json_path, encoding='utf-8') as f:
+            race_data = json.load(f)
+        json_date = race_data.get('date', date_str)
+        if json_date != date_str:
+            file_ym    = json_date[:6]
+            date_str   = json_date
+            today_disp = f'{date_str[:4]}/{date_str[4:6]}/{date_str[6:]}'
+            print(f'  対象日: {today_disp}')
+        all_races = race_data.get('all_races', [])
+        print(f'  {len(all_races)} レース取得\n')
     else:
-        # 日付からデフォルトパスを探す
+        # 日付からデフォルトJSONパスを探す
         json_path = f'{args.data}/races_{date_str}.json'
         if not os.path.exists(json_path):
-            # all_ prefix も試す
             alt = f'{args.data}/races_all_{date_str}.json'
             if os.path.exists(alt):
                 json_path = alt
             else:
                 print(f'[ERROR] JSONファイルが見つかりません: {json_path}')
-                print('  先に fetch_race.py を実行してください:')
-                print(f'    python fetch_race.py --date {date_str}')
+                print('  --input predict_input.csv か --json <path> を指定してください')
                 sys.exit(1)
-
-    print(f'レースデータ読み込み: {json_path}')
-    with open(json_path, encoding='utf-8') as f:
-        race_data = json.load(f)
-
-    # JSONの日付でヘッダーを上書き表示
-    json_date = race_data.get('date', date_str)
-    if json_date != date_str:
-        file_ym    = json_date[:6]
-        date_str   = json_date
-        today_disp = f'{date_str[:4]}/{date_str[4:6]}/{date_str[6:]}'
-        print(f'  対象日: {today_disp}')
-
-    all_races = race_data.get('all_races', [])
-    print(f'  {len(all_races)} レース取得\n')
+        print(f'レースデータ読み込み: {json_path}')
+        with open(json_path, encoding='utf-8') as f:
+            race_data = json.load(f)
+        json_date = race_data.get('date', date_str)
+        if json_date != date_str:
+            file_ym    = json_date[:6]
+            date_str   = json_date
+            today_disp = f'{date_str[:4]}/{date_str[4:6]}/{date_str[6:]}'
+            print(f'  対象日: {today_disp}')
+        all_races = race_data.get('all_races', [])
+        print(f'  {len(all_races)} レース取得\n')
 
     # ── 予測実行 ──
     results   = []
@@ -350,7 +427,7 @@ def main():
             print(f'  [除外] {_venue(race_id)} {rnum}R {race_name} (オッズ未取得)')
             continue
 
-        info = json_to_info(race, file_ym)
+        info = race if args.input else json_to_info(race, file_ym)
         res  = predict(race_id, info, horse_db, trainer_stats, jockey_stats,
                        turf_win, turf_pl, dirt_win, dirt_pl)
 
@@ -381,8 +458,8 @@ def main():
             course_tag = 'ダート' if res['is_dirt'] else '芝'
             aite_nums  = ','.join(res['uma_aite'])
             print(f'  {res["venue"]} {res["rnum"]}R [{course_tag}]  '
-                  f'三連複 {res["uma_honmei"]}-{res["uma_renka"]}-{aite_nums}  '
-                  f'¥{res["bet_total"]}')
+                  f'三連複 ◎{res["uma_honmei"]} × {aite_nums}  '
+                  f'{res["n_tickets"]}通 ¥{res["bet_total"]}')
         print(f'\n  合計投資: ¥{total_bet:,}')
     print('=' * 72)
 

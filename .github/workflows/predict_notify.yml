@@ -48,7 +48,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - run: pip install requests beautifulsoup4
+      - run: pip install requests beautifulsoup4 lightgbm numpy
 
       - name: 対象日決定
         id: set_date
@@ -101,6 +101,15 @@ jobs:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
           CURRENT_CAPITAL: ${{ github.event.inputs.capital || '70000' }}
 
+      - name: ML三連複予測 (前半) & Discord通知
+        run: |
+          python predict_ml_sanrenpuku.py \
+            --input predict_input.csv \
+            --data data \
+            --date ${{ steps.set_date.outputs.target_date }}
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+
       - name: エラー時Discord通知
         if: failure()
         run: |
@@ -137,7 +146,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - run: pip install requests beautifulsoup4
+      - run: pip install requests beautifulsoup4 lightgbm numpy
 
       - name: 対象日決定
         id: set_date
@@ -198,6 +207,16 @@ jobs:
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
           CURRENT_CAPITAL: ${{ github.event.inputs.capital || '70000' }}
+
+      - name: ML三連複予測 (後半) & Discord通知
+        if: steps.check_rows.outputs.rows != '1'
+        run: |
+          python predict_ml_sanrenpuku.py \
+            --input predict_input.csv \
+            --data data \
+            --date ${{ steps.set_date.outputs.target_date }}
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
 
       - name: エラー時Discord通知
         if: failure()

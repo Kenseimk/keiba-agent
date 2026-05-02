@@ -313,8 +313,8 @@ def extract_features(name, h, info, horse_db, trainer_stats, jockey_stats):
     trainer_dist_wr = ts['dist_wr'].get(band, default_twr) if ts and 'dist_wr' in ts else default_twr
 
     # 騎手×コース別（既存factor jockeyの補完）
-    jockey_course_wr = (js['wr_dirt'] if (js and course == 'ダート') else
-                        js['wr_turf'] if js else 0.07)
+    jockey_course_wr = (js.get('wr_dirt', default_jwr) if (js and course == 'ダート') else
+                        js.get('wr_turf', default_jwr) if js else 0.07)
 
     # 騎手×調教師コンビ勝率
     jockey_trainer_wr = (js['trainer_wr'].get(trainer, default_jwr)

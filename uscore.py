@@ -379,11 +379,17 @@ def build_jockey_stats(horse_db: dict) -> dict:
                 stats[j]['places'] += 1
     result = {}
     for j, s in stats.items():
-        n = s['n']
+        n  = s['n']
+        wr = s['wins'] / n if n > 0 else 0.0
         result[j] = {
-            'n':  n,
-            'wr': s['wins']  / n if n > 0 else 0.0,
-            'pr': s['places'] / n if n > 0 else 0.0,
+            'n':          n,
+            'wr':         wr,
+            'pr':         s['places'] / n if n > 0 else 0.0,
+            'wr_turf':    wr,
+            'wr_dirt':    wr,
+            'dist_wr':    {},
+            'venue_wr':   {},
+            'trainer_wr': {},
         }
     return result
 

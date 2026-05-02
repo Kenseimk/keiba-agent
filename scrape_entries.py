@@ -87,7 +87,7 @@ def fetch_shutuba(session, race_id):
     """出馬表（馬名・騎手・馬番・オッズ・人気）を取得"""
     url = f'https://race.netkeiba.com/race/shutuba.html?race_id={race_id}'
     r = get(session, url)
-    if not r: return [], ''
+    if not r: return [], '', '', 0, '芝'
     soup = BeautifulSoup(r.content, 'html.parser')
 
     # レース名・グレード
@@ -113,6 +113,29 @@ def fetch_shutuba(session, race_id):
         for g in ['G1', 'G2', 'G3']:
             if soup.find(class_=re.compile(g)):
                 grade = g
+
+    # 距離・コース取得
+    dist = 0
+    course = '芝'
+    for sel in ['.RaceData01', 'dd.RaceData01', '[class*="RaceData01"]',
+                '.RaceSubData', '.race_data']:
+        el = soup.select_one(sel)
+        if el:
+            txt = el.get_text()
+            m = re.search(r'(\d{3,4})m', txt)
+            if m:
+                dist = int(m.group(1))
+            if re.search(r'ダ[ートー]|ダ\d', txt):
+                course = 'ダート'
+            break
+    # フォールバック: ページ全体から距離を探す
+    if dist == 0:
+        for txt in [soup.get_text()]:
+            m = re.search(r'(芝|ダート|ダ)\s*(\d{3,4})m', txt)
+            if m:
+                dist = int(m.group(2))
+                course = 'ダート' if 'ダ' in m.group(1) else '芝'
+                break
                 break
 
     horses = []
@@ -125,13 +148,17 @@ def fetch_shutuba(session, race_id):
         for row in table.find_all('tr'):
             tds = row.find_all('td')
             if len(tds) < 5: continue
-            # 馬番取得
+            # 馬番取得（枠番=1列目、馬番=2列目 の順なので2番目の数字を優先）
             umaban = ''
+            nums_found = []
             for td in tds[:3]:
                 t = td.get_text(strip=True)
                 if re.match(r'^\d{1,2}$', t):
-                    umaban = t
-                    break
+                    nums_found.append(t)
+            if len(nums_found) >= 2:
+                umaban = nums_found[1]   # 2番目が馬番
+            elif nums_found:
+                umaban = nums_found[0]
             # 馬名取得
             name_a = row.find('a', href=re.compile(r'/horse/'))
             if not name_a: continue
@@ -169,7 +196,7 @@ def fetch_shutuba(session, race_id):
                     'shutuba_odds': shutuba_odds,
                     'shutuba_pop':  shutuba_pop,
                 })
-    return horses, race_name, grade
+    return horses, race_name, grade, dist, course
 
 # ── オッズ取得 ────────────────────────────────────────────
 def fetch_odds(session, race_id):
@@ -283,7 +310,7 @@ def main():
 
         for race_id in race_ids:
             print(f'  [{race_id}] 出馬表取得中...', end=' ')
-            horses, race_name, grade = fetch_shutuba(session, race_id)
+            horses, race_name, grade, dist, course = fetch_shutuba(session, race_id)
             sleep(3.0, 5.0)
             if not horses:
                 print('スキップ（馬なし）')
@@ -333,27 +360,32 @@ def main():
                 final_odds = odds_info[0] if odds_info[0] is not None else h.get('shutuba_odds') or ''
                 final_pop  = odds_info[1] if odds_info[1] is not None else h.get('shutuba_pop')  or ''
                 all_rows.append({
-                    'race_id':    race_label,
-                    '馬名':        name,
-                    '単勝オッズ':  final_odds,
-                    '人気':        final_pop,
-                    '騎手':        h['jockey'],
-                    '馬体重':      h['weight'],
-                    '馬番':        h['umaban'],
-                    'grade':       grade,
+                    'race_id':     race_label,
+                    'raw_race_id': race_id,
+                    'dist':        dist,
+                    'course':      course,
+                    '馬名':         name,
+                    '単勝オッズ':   final_odds,
+                    '人気':         final_pop,
+                    '騎手':         h['jockey'],
+                    '馬体重':       h['weight'],
+                    '馬番':         h['umaban'],
+                    'grade':        grade,
                 })
 
     if not all_rows:
         print('\n対象レースなし（本日はJRA開催なし）')
         # 空ファイルを出力して workflow が続けられるようにする
         with open(args.output, 'w', encoding='utf-8-sig', newline='') as f:
-            w = csv.DictWriter(f, fieldnames=['race_id','馬名','単勝オッズ','人気','騎手','馬体重','馬番','grade'])
+            w = csv.DictWriter(f, fieldnames=['race_id','raw_race_id','dist','course',
+                                              '馬名','単勝オッズ','人気','騎手','馬体重','馬番','grade'])
             w.writeheader()
         sys.exit(0)
 
     # CSV書き出し
     with open(args.output, 'w', encoding='utf-8-sig', newline='') as f:
-        writer = csv.DictWriter(f, fieldnames=['race_id','馬名','単勝オッズ','人気','騎手','馬体重','馬番','grade'])
+        writer = csv.DictWriter(f, fieldnames=['race_id','raw_race_id','dist','course',
+                                               '馬名','単勝オッズ','人気','騎手','馬体重','馬番','grade'])
         writer.writeheader()
         for row in all_rows:
             writer.writerow(row)
